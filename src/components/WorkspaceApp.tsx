@@ -448,6 +448,37 @@ export default function WorkspaceApp({
         }, 3000);
     }
   }, [demo, account, toast, conflict]);
+  useEffect(() => {
+    const host = window as Window & {
+      __studyspaceFlushForClose?: () => Promise<boolean>;
+    };
+    const flush = async () => {
+      const deadline = Date.now() + 8000;
+      let timeout: ReturnType<typeof setTimeout>;
+      const save = async () => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          while (saving.current && Date.now() < deadline)
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          if (Date.now() >= deadline) return false;
+          if (conflictRef.current) return false;
+          if (!pending.current) return true;
+          await persist();
+        }
+        return !pending.current && !saving.current && !conflictRef.current;
+      };
+      return Promise.race([
+        save(),
+        new Promise<boolean>((resolve) => {
+          timeout = setTimeout(() => resolve(false), 8000);
+        }),
+      ]).finally(() => clearTimeout(timeout));
+    };
+    host.__studyspaceFlushForClose = flush;
+    return () => {
+      if (host.__studyspaceFlushForClose === flush)
+        delete host.__studyspaceFlushForClose;
+    };
+  }, [persist]);
   const mutate: Mutate = useCallback(
     (fn, message, deferRender = false) => {
       if (!wRef.current) return;

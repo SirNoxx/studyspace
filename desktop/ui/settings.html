@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Studyspace desktop settings</title>
+    <link rel="stylesheet" href="settings.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="../build/icon.png" width="44" height="44" alt="" />
+        <div>
+          <span class="eyebrow">YOUR DESKTOP WORKSPACE</span>
+          <h1>Studyspace</h1>
+        </div>
+        <span id="version" class="badge"></span>
+      </header>
+      <section>
+        <h2>A space that stays with you</h2>
+        <p>
+          Your local notes are saved on this computer. Export a full workspace
+          backup in Settings → Data to move work between the browser, desktop,
+          and cloud.
+        </p>
+        <button id="local" type="button" class="primary">
+          Open local workspace <span aria-hidden="true">↗</span>
+        </button>
+      </section>
+      <section>
+        <div class="section-heading">
+          <h2>Connect your cloud workspace</h2>
+          <span class="badge">OPTIONAL</span>
+        </div>
+        <p>
+          Use the address of your hosted Studyspace app. Your app server
+          connects to Supabase and manages accounts and published research.
+        </p>
+        <form id="settings-form">
+          <label for="cloud">Studyspace app address</label
+          ><input
+            id="cloud"
+            type="url"
+            placeholder="https://studyspace.example.com"
+            autocomplete="url"
+            aria-describedby="cloud-hint"
+          /><small id="cloud-hint"
+            >Enter the app’s HTTPS address, without a path. Supabase keys belong
+            on your server.</small
+          ><label class="checkbox"
+            ><input id="automatic" type="checkbox" checked /><span
+              >Automatically check for and download updates</span
+            ></label
+          >
+          <div class="actions">
+            <button type="submit" class="primary">Save settings</button
+            ><button id="cloud-open" type="button">Open cloud workspace</button>
+          </div>
+        </form>
+        <p id="feedback" role="status" aria-live="polite"></p>
+        <button id="guide" class="text-button" type="button">
+          Read the Supabase setup guide <span aria-hidden="true">↗</span>
+        </button>
+      </section>
+      <section>
+        <div class="section-heading">
+          <h2>Keep Studyspace up to date</h2>
+          <span id="update-badge" class="badge">READY</span>
+        </div>
+        <p id="update-status" role="status" aria-live="polite">
+          Checking update settings…
+        </p>
+        <progress
+          id="progress"
+          max="100"
+          value="0"
+          hidden
+          aria-label="Update download progress"
+        ></progress>
+        <div class="actions">
+          <button id="check" type="button">Check for updates</button
+          ><button id="install" type="button" class="primary" hidden>
+            Restart &amp; install
+          </button>
+        </div>
+        <small
+          >Updates download in the background. You choose when to restart;
+          Studyspace saves your work first.</small
+        >
+      </section>
+      <footer>
+        Made for thoughtful work. <span>Your writing stays yours.</span>
+      </footer>
+    </main>
+    <script src="settings.js"></script>
+  </body>
+</html>

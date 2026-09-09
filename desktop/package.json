@@ -1,0 +1,71 @@
+{
+  "name": "studyspace-desktop",
+  "version": "1.0.0",
+  "description": "Studyspace \u00e2\u20ac\u201d a calm space for writing, research, and understanding.",
+  "author": "SirNoxx",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "pack": "electron-builder --win nsis --x64 --publish never",
+    "pack:dir": "electron-builder --win --x64 --dir --publish never",
+    "test:update": "electron scripts/verify-update.cjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.sirnoxx.studyspace",
+    "productName": "Studyspace",
+    "copyright": "Copyright \u00c2\u00a9 2026 SirNoxx",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "*.cjs",
+      "ui/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "Studyspace-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "Studyspace"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SirNoxx",
+        "repo": "studyspace",
+        "releaseType": "release"
+      }
+    ],
+    "afterPack": "./scripts/after-pack.cjs"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "release_title": "Version 1",
+  "verified_at": "2026-09-09T08:57:02.293872+00:00",
+  "platform": "Windows 11 x64",
+  "electron": "44.3.0",
+  "electron_updater": "6.8.9",
+  "electron_builder": "26.15.3",
+  "web_tests": {
+    "passed": 55,
+    "files": 8
+  },
+  "desktop_unit_tests": {
+    "passed": 9
+  },
+  "production_browser_journeys": {
+    "passed": 20,
+    "initial_run_passed": 18,
+    "initial_timeouts": 2,
+    "serial_rerun_passed": 2,
+    "note": "Editor-loading expectations timed out during concurrent desktop packaging; both passed after packaging finished."
+  },
+  "packaged_smoke": [
+    "startup without separately installed Node server",
+    "sandboxed renderer without Node or privileged IPC",
+    "HTTPS cloud-origin validation",
+    "desktop settings persistence",
+    "immediate-close note save",
+    "note title and body retained across process restart",
+    "isolated test profile",
+    "GitHub updater configuration"
+  ],
+  "update_transport": [
+    "actual NSIS installer download through Electron HTTP executor",
+    "valid SHA512 accepted",
+    "corrupt SHA512 rejected",
+    "no installer executed during transport test"
+  ],
+  "signing": "Unsigned; no signing certificate supplied",
+  "artifact_sha256": {
+    "Studyspace-Setup-1.0.0-x64.exe": "460cc3d68b0f50711236d5a18760b1675b01bc9107b0694525e35335f31ed8a0",
+    "Studyspace-Setup-1.0.0-x64.exe.blockmap": "4949b6dac89723e96565805de7e56c366b918b693c6c222137ea2b7e7d21da41",
+    "latest.yml": "2cd04b1414e2a105344a219af40350448027cd88705864a3e24a825426d228ad"
+  },
+  "external_setup_not_performed": [
+    "hosted HTTPS deployment",
+    "Supabase project configuration and live Auth/Storage tests",
+    "durable hosted worker",
+    "future-version installer upgrade"
+  ]
+}

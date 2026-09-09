@@ -2,6 +2,8 @@
 
 A private Markdown workspace for writing, research, personal dictionaries, evidence, journals, review, and selectively published study collections. Built from [the supplied master prompt](docs/master-build-prompt.md). The original prompt outside this repository is unchanged.
 
+**Windows 11 desktop — [Download Version 1](https://github.com/SirNoxx/studyspace/releases/tag/v1.0.0).** The x64 installer bundles the entire local workspace and runtime, with automatic update checks/downloads from GitHub and a save-protected restart to install. Read the [Windows and Supabase setup guide](docs/windows-supabase-setup.md) for installation, transferring browser notes, connecting your hosted app, and managing profiles/public research. [Build and release instructions](docs/windows-release.md) cover future desktop versions. Version 1 is unsigned.
+
 The September 8 enhancement adds labeled navigation, study-card collections, selection actions, method previews, ZIP progress, inline folders, stable hyperlinks, attachment browsing, onboarding, AI Chat, eight optional themes, journal calendars, and Discover categories/popularity. See [delivery and preservation details](docs/enhancements.md) and [how to connect and manage Supabase public research](docs/supabase-management.md). The original app is retained on `master`, tagged `before-enhancements-20260908`, with a verified bundle and source ZIP outside the repository.
 
 Latest refinement: [writing fixes, linked study groups, and dropdown styling](docs/review-and-writing-update.md). Verified with 55 automated tests and 20 production Chromium journeys; [current evidence](docs/evidence/review-writing-verification.json).

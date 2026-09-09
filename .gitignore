@@ -10,3 +10,7 @@ playwright-report/
 .backups/
 .supabase/
 supabase/.temp/
+desktop/node_modules/
+desktop/release/
+desktop/.stage/
+desktop/.smoke/

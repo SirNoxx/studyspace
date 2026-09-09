@@ -1,0 +1,46 @@
+name: Windows desktop release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag (for example v1.0.1)
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Verify tag matches both package versions
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node -e "const v=require('./desktop/package.json').version;if(process.env.RELEASE_TAG!=='v'+v||require('./package.json').version!==v)process.exit(1)"
+      - run: npm ci
+      - run: npm ci --prefix desktop
+      - run: npm test
+      - run: npm run desktop:test
+      - run: npm run desktop:build
+      - run: npm run desktop:smoke
+      - run: npm run desktop:test-update
+      - name: Create checksums and draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        shell: pwsh
+        run: |
+          $releaseFiles = Get-ChildItem -LiteralPath desktop/release -File | Where-Object { $_.Name -match '\.(exe|blockmap|yml)$' -and $_.Name -ne 'builder-effective-config.yaml' }
+          $releaseFiles | ForEach-Object { $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256; "$($hash.Hash.ToLower())  $($_.Name)" } | Set-Content -LiteralPath desktop/release/SHA256SUMS.txt
+          $assets = @($releaseFiles.FullName) + @((Resolve-Path desktop/release/SHA256SUMS.txt).Path)
+          gh release create "$env:RELEASE_TAG" @assets --verify-tag --draft --title "Version $($env:RELEASE_TAG.TrimStart('v'))" --notes "Windows x64 desktop release. See docs/windows-supabase-setup.md for installation, updates, and Supabase setup."
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

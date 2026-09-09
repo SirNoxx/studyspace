@@ -1,6 +1,6 @@
 {
   "name": "studyspace",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,13 @@
     "worker": "tsx --env-file=.env.local scripts/worker.ts",
     "db:test": "tsx --env-file=.env.local scripts/database-test.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
-    "format": "prettier --write src tests e2e scripts"
+    "format": "prettier --write src tests e2e scripts",
+    "desktop:icons": "node desktop/scripts/icons.cjs",
+    "desktop:stage": "node desktop/scripts/stage-web.cjs",
+    "desktop:build": "npm run desktop:icons && npm run desktop:stage && npm --prefix desktop run pack",
+    "desktop:test": "npm --prefix desktop test",
+    "desktop:smoke": "node desktop/scripts/smoke.cjs",
+    "desktop:test-update": "npm --prefix desktop run test:update"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.0",
