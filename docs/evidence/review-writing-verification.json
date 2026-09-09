@@ -1,0 +1,43 @@
+{
+  "recordedAt": "2026-09-09T06:48:32.069712+00:00",
+  "baselineCommit": "b839a48",
+  "environment": "Windows; Node 24.11.1; Next.js production on http://127.0.0.1:3000; isolated Playwright Chromium contexts",
+  "checks": {
+    "typecheck": "passed",
+    "build": "passed",
+    "productionStart": "running",
+    "automatedTests": {
+      "passed": 55,
+      "files": 8
+    },
+    "productionBrowserTests": {
+      "passed": 20
+    },
+    "gitDiffCheck": "passed",
+    "reviewAccessibility": "zero axe violations in inspected view",
+    "existingAndNewThemeAccessibility": "zero axe violations in inspected views"
+  },
+  "focusedCoverage": [
+    "New-title focus, full replacement, normal subsequent editing and reload across tab, collection and Quick actions creation",
+    "Selection popup geometry and scroll tracking, action content retention, mobile reading selection",
+    "Real styled dropdown option selection",
+    "Linked study group create/edit/rename/location change/reload/delete",
+    "Manual assignment priority, source moves, folder rename, learning-history retention, imported group link identity"
+  ],
+  "manualVisualInspection": [
+    "docs/screenshots/review-groups.png",
+    "docs/screenshots/styled-dropdown.png",
+    "docs/screenshots/selection-actions.png"
+  ],
+  "preservation": {
+    "userBrowserDataCleared": false,
+    "hostedDataModified": false,
+    "newSQLMigrationRequired": false,
+    "originalMasterAndBackupsUnchanged": true
+  },
+  "limits": [
+    "Supabase and live AI remain unconfigured; browser tests use local data.",
+    "Themed select option popups use supported customizable native selects; unsupported browsers retain native option pickers.",
+    "Performance fixture and accessibility checks are scoped to recorded local conditions, not every device or browser."
+  ]
+}

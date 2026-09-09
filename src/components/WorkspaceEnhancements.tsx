@@ -19,8 +19,6 @@ import { Modal, Field, SymbolIcon } from "./ui";
 import {
   methods,
   extraThemes,
-  createCardGroup,
-  removeCardGroup,
   calendarDays,
   dateParts,
   shiftPeriod,
@@ -181,7 +179,7 @@ export function GroupSelect({
   ctx,
   value,
   onChange,
-  label = "Study-card collection",
+  label = "Study group",
 }: {
   ctx: AppContext;
   value?: string;
@@ -191,7 +189,7 @@ export function GroupSelect({
   return (
     <Field label={label}>
       <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Ungrouped</option>
+        <option value="">Automatic / ungrouped</option>
         {ctx.w.settings.cardGroups?.map((g) => (
           <option value={g.id} key={g.id}>
             {g.title}
@@ -199,127 +197,6 @@ export function GroupSelect({
         ))}
       </select>
     </Field>
-  );
-}
-export function CardCollections({
-  ctx,
-  value,
-  onChange,
-}: {
-  ctx: AppContext;
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  const [name, setName] = useState(""),
-    [error, setError] = useState("");
-  const groups = ctx.w.settings.cardGroups ?? [],
-    selected = groups.find((g) => g.id === value);
-  return (
-    <section className="card-collections">
-      <div className="form-row">
-        <Field label="Review study-card collection">
-          <select value={value} onChange={(e) => onChange(e.target.value)}>
-            <option value="all">All study cards</option>
-            <option value="">Ungrouped</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.title} ·{" "}
-                {ctx.w.review.filter((r) => r.groupId === g.id).length}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <button
-          className="secondary"
-          onClick={() =>
-            ctx.setDialog({
-              type: "review-card",
-              groupId: value === "all" ? "" : value,
-            })
-          }
-        >
-          <Plus size={14} /> Study card
-        </button>
-      </div>
-      <details>
-        <summary>Manage study-card collections</summary>
-        <p className="muted">
-          These organize your review cards separately from workspace
-          collections. Removing one leaves its cards in Ungrouped.
-        </p>
-        <form
-          className="form-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            try {
-              let id = "";
-              ctx.mutate((w) => {
-                id = createCardGroup(w, name).id;
-              });
-              if (id) {
-                onChange(id);
-                setName("");
-                setError("");
-              }
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        >
-          <input
-            aria-label="New study-card collection name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={120}
-            placeholder="e.g. AI"
-            required
-          />
-          <button className="secondary">Create collection</button>
-        </form>
-        {selected && (
-          <div className="form-row">
-            <input
-              key={selected.id}
-              aria-label="Rename study-card collection"
-              defaultValue={selected.title}
-              onBlur={(e) => {
-                const title = e.target.value.trim();
-                if (
-                  !title ||
-                  groups.some(
-                    (g) =>
-                      g.id !== selected.id &&
-                      g.title.toLowerCase() === title.toLowerCase(),
-                  )
-                ) {
-                  e.target.value = selected.title;
-                  setError("Use a nonempty, unique name.");
-                  return;
-                }
-                ctx.mutate((w) => {
-                  w.settings.cardGroups!.find(
-                    (g) => g.id === selected.id,
-                  )!.title = title;
-                });
-              }}
-            />
-            <button
-              className="text-button"
-              onClick={() => {
-                ctx.mutate(
-                  (w) => removeCardGroup(w, selected.id),
-                  "Collection removed. Cards remain in Ungrouped.",
-                );
-                onChange("");
-              }}
-            >
-              Remove grouping; keep cards
-            </button>
-          </div>
-        )}
-        {error && <p role="alert">{error}</p>}
-      </details>
-    </section>
   );
 }
 export function JournalCalendar({

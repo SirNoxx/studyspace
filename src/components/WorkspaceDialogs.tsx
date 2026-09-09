@@ -249,14 +249,7 @@ export default function Dialogs({
         title: "New note",
         detail: "Start writing here",
         action: () => {
-          let id = "";
-          mutate((s) => {
-            id = createNote(
-              s,
-              active?.containerId ?? ctx.focus ?? general(s).id,
-            ).id;
-          });
-          ctx.openNote(id);
+          ctx.addNote(active?.containerId ?? ctx.focus ?? general(w).id);
           onClose();
         },
         key: "",

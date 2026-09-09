@@ -9,6 +9,7 @@ import {
 } from "../src/lib/domain";
 import {
   createCardGroup,
+  cardsInGroup,
   removeCardGroup,
   calendarDays,
   shiftPeriod,
@@ -184,4 +185,53 @@ it("attachment browsing excludes filename prose, code samples, and ambiguous fil
   expect(scopedAttachments(w, root.id)).toHaveLength(0);
   n.body = `![[attachment:${asset.id}]]`;
   expect(scopedAttachments(w, root.id)).toHaveLength(1);
+});
+
+it("linked study groups follow source moves, preserve assignments and restore their folder identity", async () => {
+  const w = emptyWorkspace(),
+    root = createContainer(w, { title: "TEST research" }),
+    folder = createContainer(w, {
+      title: "AI",
+      parentId: root.id,
+      kind: "folder",
+    }),
+    elsewhere = createContainer(w, { title: "Other" }),
+    note = createNote(w, folder.id),
+    group = createCardGroup(w, "AI study", root.id),
+    manual = createCardGroup(w, "Manual");
+  const card = addReview(w, {
+    front: "TEST linked question",
+    back: "answer",
+    sourceType: "note",
+    sourceId: note.id,
+  });
+  expect(cardsInGroup(w, group.id).map((c) => c.id)).toEqual([card.id]);
+  expect(cardsInGroup(w, "")).toHaveLength(0);
+  folder.title = "Renamed folder";
+  expect(cardsInGroup(w, group.id)).toHaveLength(1);
+  moveItems(w, [note.id], elsewhere.id);
+  expect(cardsInGroup(w, group.id)).toHaveLength(0);
+  expect(cardsInGroup(w, "")).toHaveLength(1);
+  moveItems(w, [note.id], folder.id);
+  card.groupId = manual.id;
+  expect(cardsInGroup(w, group.id)).toHaveLength(0);
+  expect(cardsInGroup(w, manual.id)).toHaveLength(1);
+  delete card.groupId;
+  const bytes = await exportWorkspace(w, { full: true }),
+    fresh = emptyWorkspace(),
+    plan = await prepareImport([
+      new File([Uint8Array.from(bytes)], "groups.zip"),
+    ]);
+  commitImport(fresh, plan, general(fresh).id);
+  const imported = fresh.settings.cardGroups!.find(
+    (g) => g.title === "AI study",
+  )!;
+  expect(imported.containerId).not.toBe(root.id);
+  expect(
+    fresh.containers.find((c) => c.id === imported.containerId)?.title,
+  ).toBe("TEST research");
+  expect(cardsInGroup(fresh, imported.id)).toHaveLength(1);
+  removeCardGroup(w, group.id);
+  expect(w.review[0].events).toEqual(card.events);
+  expect(cardsInGroup(w, "")).toHaveLength(1);
 });

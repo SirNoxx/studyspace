@@ -117,6 +117,7 @@ import {
 import { normalizeWorkspace } from "@/lib/enhancements";
 import Inspector from "./Inspector";
 import WorkspaceViews from "./WorkspaceViews";
+import SelectionToolbar from "./SelectionToolbar";
 const Editor = dynamic(() => import("./Editor"), {
   ssr: false,
   loading: () => <div className="muted">Opening editor…</div>,
@@ -142,6 +143,7 @@ export interface AppContext {
   focus: string | null;
   setFocus: (id: string | null) => void;
   openNote: (id: string, newTab?: boolean) => void;
+  addNote: (parentId?: string) => void;
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
   toast: (message: string) => void;
@@ -223,6 +225,8 @@ export default function WorkspaceApp({
       id: string;
     } | null>(null);
   const editor = useRef<EditorHandle | null>(null),
+    titleInput = useRef<HTMLInputElement>(null),
+    newTitleId = useRef<string | null>(null),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     renderTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -234,6 +238,12 @@ export default function WorkspaceApp({
     scrolls = useRef(new Map<string, number>()),
     scroller = useRef<HTMLDivElement>(null);
   const activeContainer = w?.notes.find((n) => n.id === activeId)?.containerId;
+  useEffect(() => {
+    if (!dialog && view === "collections" && newTitleId.current === activeId) {
+      titleInput.current?.focus();
+      titleInput.current?.select();
+    }
+  }, [activeId, dialog, view]);
   const flushRender = () => {
     if (renderTimer.current) {
       clearTimeout(renderTimer.current);
@@ -585,6 +595,9 @@ export default function WorkspaceApp({
     mutate((s) => {
       id = createNote(s, parentId ?? focus ?? general(s).id).id;
     });
+    if (!id) return;
+    newTitleId.current = id;
+    if (mode === "reading") setMode("live");
     openNote(id);
   };
   const addFolder = (parentId: string) => {
@@ -753,6 +766,7 @@ export default function WorkspaceApp({
     );
   const ctx: AppContext = {
     w,
+    addNote,
     mutate,
     demo,
     account,
@@ -1823,10 +1837,17 @@ export default function WorkspaceApp({
                   </div>
                 </div>
                 <input
+                  ref={titleInput}
                   className="note-title"
                   aria-label="Note title"
                   value={active.title}
                   readOnly={mode === "reading"}
+                  onFocus={(e) => {
+                    if (e.target.value === "Untitled") e.target.select();
+                  }}
+                  onBlur={() => {
+                    newTitleId.current = null;
+                  }}
                   onChange={(e) =>
                     mutate((s) => {
                       const n = s.notes.find((n) => n.id === active.id)!;
@@ -1868,13 +1889,7 @@ export default function WorkspaceApp({
                     + Add tag
                   </button>
                 </div>
-                <div
-                  className="writing-area"
-                  onMouseUp={() => {
-                    if (mode === "reading")
-                      setSelection(window.getSelection()?.toString() ?? "");
-                  }}
-                >
+                <div className="writing-area">
                   {mode === "reading" && (
                     <Markdown
                       attachments={w.attachments}
@@ -2234,45 +2249,56 @@ export default function WorkspaceApp({
           </aside>
         </>
       )}
-      {view === "collections" && active && selection.trim() && !dialog && (
-        <div
-          className="selection-context-menu"
-          role="toolbar"
-          aria-label="Selected text actions"
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <button
-            onClick={() =>
-              setDialog({
-                type: "definition",
-                value: selection,
-                sourceId: active.id,
-              })
-            }
+      {view === "collections" &&
+        active &&
+        (mode === "reading" || selection.trim()) &&
+        !dialog && (
+          <SelectionToolbar
+            key={active.id + mode}
+            selection={selection}
+            reading={mode === "reading"}
           >
-            <BookA size={14} />
-            Add to dictionary
-          </button>
-          <button
-            onClick={() =>
-              setDialog({
-                type: "review-card",
-                value: "",
-                answer: selection,
-                passage: selection,
-                sourceId: active.id,
-              })
-            }
-          >
-            <Layers size={14} />
-            Create study card
-          </button>
-          <button onClick={() => setDialog({ type: "hyperlink" })}>
-            <Link2 size={14} />
-            Insert / edit link
-          </button>
-        </div>
-      )}
+            {(selectedText) => (
+              <>
+                <button
+                  onClick={() =>
+                    setDialog({
+                      type: "definition",
+                      value: selectedText,
+                      sourceId: active.id,
+                    })
+                  }
+                >
+                  <BookA size={14} />
+                  Add to dictionary
+                </button>
+                <button
+                  onClick={() =>
+                    setDialog({
+                      type: "review-card",
+                      value: "",
+                      answer: selectedText,
+                      passage: selectedText,
+                      sourceId: active.id,
+                    })
+                  }
+                >
+                  <Layers size={14} />
+                  Create study card
+                </button>
+                <button
+                  onClick={() => {
+                    setSelection(selectedText);
+                    setDialog({ type: "hyperlink" });
+                  }}
+                >
+                  <Link2 size={14} />
+                  Insert / edit link
+                </button>
+              </>
+            )}
+          </SelectionToolbar>
+        )}
       {view === "collections" && active && <ChatLauncher ctx={ctx} />}
       {exportProgress && (
         <div className="export-progress" role="status">
@@ -2313,7 +2339,12 @@ export default function WorkspaceApp({
           dialog={dialog}
           onClose={() => {
             setDialog(null);
-            setTimeout(() => editor.current?.focus(), 0);
+            setTimeout(() => {
+              if (newTitleId.current) {
+                titleInput.current?.focus();
+                titleInput.current?.select();
+              } else editor.current?.focus();
+            }, 0);
           }}
         />
       )}

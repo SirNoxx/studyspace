@@ -4,6 +4,8 @@ A private Markdown workspace for writing, research, personal dictionaries, evide
 
 The September 8 enhancement adds labeled navigation, study-card collections, selection actions, method previews, ZIP progress, inline folders, stable hyperlinks, attachment browsing, onboarding, AI Chat, eight optional themes, journal calendars, and Discover categories/popularity. See [delivery and preservation details](docs/enhancements.md) and [how to connect and manage Supabase public research](docs/supabase-management.md). The original app is retained on `master`, tagged `before-enhancements-20260908`, with a verified bundle and source ZIP outside the repository.
 
+Latest refinement: [writing fixes, linked study groups, and dropdown styling](docs/review-and-writing-update.md). Verified with 55 automated tests and 20 production Chromium journeys; [current evidence](docs/evidence/review-writing-verification.json).
+
 **Status: runnable development application, not a production-certified release.** The local workspace works without credentials. Supabase authentication/storage, hosted background workers, live AI, and a full hosted restore require external configuration and verification. The [64-item acceptance checklist](docs/acceptance.md) records implementation, evidence, and remaining gaps without treating fixtures as live services.
 
 ## Start immediately

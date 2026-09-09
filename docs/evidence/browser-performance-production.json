@@ -1,15 +1,15 @@
 {
-  "date": "2026-09-09T06:25:13.001Z",
+  "date": "2026-09-09T06:47:43.422Z",
   "environment": "Windows local Next production server; Playwright chromium",
   "notes": 10000,
   "terms": 3000,
   "characters": 30,
   "keydownToAnimationFrameMs": {
-    "p50": 9,
-    "p95": 15.400000005960464,
-    "max": 32
+    "p50": 9.299999982118607,
+    "p95": 16.200000017881393,
+    "max": 31.899999976158142
   },
-  "cachedSwitchIncludingPlaywrightMs": 167,
+  "cachedSwitchIncludingPlaywrightMs": 158,
   "targets": {
     "typingFrameMs": 16,
     "cachedSwitchMs": 200

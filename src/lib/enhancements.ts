@@ -3,6 +3,7 @@ import { findAttachment } from "./attachments";
 import {
   type Workspace,
   type Snapshot,
+  type ReviewItem,
   ancestry,
   inContainer,
   uid,
@@ -89,7 +90,11 @@ export function normalizeWorkspace(w: Workspace) {
     },
   };
 }
-export function createCardGroup(w: Workspace, title: string) {
+export function createCardGroup(
+  w: Workspace,
+  title: string,
+  containerId?: string,
+) {
   const value = title.trim();
   if (!value) throw new Error("Enter a study-card collection name.");
   if (
@@ -98,9 +103,64 @@ export function createCardGroup(w: Workspace, title: string) {
     )
   )
     throw new Error("A study-card collection already uses that name.");
-  const group = { id: uid(), title: value.slice(0, 120) };
+  if (
+    containerId &&
+    !w.containers.some((c) => c.id === containerId && !c.trashed)
+  )
+    throw new Error("Choose an available collection or folder.");
+  const group = {
+    id: uid(),
+    title: value.slice(0, 120),
+    ...(containerId ? { containerId } : {}),
+  };
   (w.settings.cardGroups ??= []).push(group);
   return group;
+}
+export function cardMatchesGroup(
+  w: Workspace,
+  card: ReviewItem,
+  group: NonNullable<Workspace["settings"]["cardGroups"]>[number],
+) {
+  if (card.groupId) return card.groupId === group.id;
+  if (
+    !group.containerId ||
+    !w.containers.some((c) => c.id === group.containerId && !c.trashed)
+  )
+    return false;
+  const within = (id?: string) =>
+    !!id &&
+    ancestry(w, id).every((c) => !c.trashed) &&
+    inContainer(w, id, group.containerId!);
+  if (card.sourceType === "note") {
+    const note = w.notes.find((n) => n.id === card.sourceId);
+    return !!note && !note.trashed && within(note.containerId);
+  }
+  if (card.sourceType === "definition") {
+    const definition = w.definitions.find(
+      (d) => d.id === card.sourceId && !d.trashed,
+    );
+    return !!definition && definition.subjectIds.some(within);
+  }
+  if (card.sourceType === "citation") {
+    const anchor = w.anchors.find((a) => a.id === card.sourceId);
+    const note = w.notes.find((n) => n.id === anchor?.noteId && !n.trashed);
+    return !!note && within(note.containerId);
+  }
+  return within(card.subjectId);
+}
+export function cardsInGroup(w: Workspace, groupId: string) {
+  const groups = w.settings.cardGroups ?? [];
+  if (groupId === "all") return w.review;
+  if (!groupId)
+    return w.review.filter(
+      (card) =>
+        !card.groupId &&
+        !groups.some((group) => cardMatchesGroup(w, card, group)),
+    );
+  const group = groups.find((g) => g.id === groupId);
+  return group
+    ? w.review.filter((card) => cardMatchesGroup(w, card, group))
+    : [];
 }
 export function removeCardGroup(w: Workspace, id: string) {
   w.settings.cardGroups = (w.settings.cardGroups ?? []).filter(

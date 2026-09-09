@@ -66,13 +66,17 @@ import { clearAccountCache } from "@/lib/store";
 import MergeReview from "./study/MergeReview";
 import JobStatus from "./JobStatus";
 import {
-  CardCollections,
   GroupSelect,
   JournalCalendar,
   ThemeExtras,
   JournalIcon,
 } from "./WorkspaceEnhancements";
-import { categories, publicationCounts } from "@/lib/enhancements";
+import StudyGroups from "./StudyGroups";
+import {
+  categories,
+  publicationCounts,
+  cardsInGroup,
+} from "@/lib/enhancements";
 export default function WorkspaceViews({
   ctx,
   view,
@@ -611,9 +615,7 @@ export default function WorkspaceViews({
     );
     const newUsed = eventsToday.filter((e) => e.before.state === "new").length;
     const reviewUsed = eventsToday.length - newUsed;
-    const selectedCards = w.review.filter(
-      (r) => cardGroup === "all" || (r.groupId ?? "") === cardGroup,
-    );
+    const selectedCards = cardsInGroup(w, cardGroup);
     const due = selectedCards
       .filter(
         (r) =>
@@ -645,15 +647,20 @@ export default function WorkspaceViews({
           {header(
             "A LITTLE LEARNING, EVERY DAY",
             "Make it stay",
-            "Come back to the ideas you chose to remember.",
+            "A focused moment with the ideas you want to keep.",
             <button
               className="secondary"
-              onClick={() => setDialog({ type: "review-card" })}
+              onClick={() =>
+                setDialog({
+                  type: "review-card",
+                  groupId: cardGroup === "all" ? "" : cardGroup,
+                })
+              }
             >
               <Plus size={16} /> Create card
             </button>,
           )}
-          <CardCollections
+          <StudyGroups
             ctx={ctx}
             value={cardGroup}
             onChange={(id) => {
@@ -829,10 +836,15 @@ export default function WorkspaceViews({
               <span>
                 <Check size={36} />
               </span>
-              <h2>A little more understanding.</h2>
+              <h2>
+                {selectedCards.length
+                  ? "A little more understanding."
+                  : "Make room for your next idea."}
+              </h2>
               <p>
-                You’re done for now. Your next ideas will be here when they’re
-                due.
+                {selectedCards.length
+                  ? "You’re done for now. Your next ideas will be here when they’re due."
+                  : "Create a card, assign existing cards, or link this group to the folder you’re studying."}
               </p>
             </div>
           )}
@@ -856,67 +868,63 @@ export default function WorkspaceViews({
             className="panel-link"
             onClick={() => setShowAllReview(!showAllReview)}
           >
-            {showAllReview ? "Hide" : "Manage"} all {w.review.length} cards
+            {showAllReview ? "Hide" : "Manage"}{" "}
+            {cardGroup === "all" ? "all " : ""}
+            {selectedCards.length} cards
           </button>
           {showAllReview && (
             <div className="review-manage">
-              {w.review
-                .filter(
-                  (r) => cardGroup === "all" || (r.groupId ?? "") === cardGroup,
-                )
-                .map((r) => (
-                  <div key={r.id}>
-                    <strong>{r.front.slice(0, 100)}</strong>
-                    <GroupSelect
-                      ctx={ctx}
-                      value={r.groupId}
-                      label={"Collection for " + r.front.slice(0, 60)}
-                      onChange={(id) =>
-                        mutate((w) => {
-                          w.review.find((c) => c.id === r.id)!.groupId =
-                            id || undefined;
-                        })
-                      }
-                    />
-                    <small>
-                      {r.suspended
-                        ? "Suspended"
-                        : "Due " + new Date(r.schedule.due).toLocaleString()}
-                    </small>
-                    <input
-                      aria-label={"Reschedule " + r.front}
-                      type="date"
-                      value={r.schedule.due.slice(0, 10)}
-                      onChange={(e) =>
-                        mutate((s) => {
-                          s.review.find((c) => c.id === r.id)!.schedule.due =
-                            new Date(
-                              e.target.value + "T12:00:00",
-                            ).toISOString();
-                        })
-                      }
-                    />
-                    <button
-                      onClick={() =>
-                        mutate((s) => {
-                          const c = s.review.find((c) => c.id === r.id)!;
-                          c.suspended = !c.suspended;
-                        })
-                      }
-                    >
-                      {r.suspended ? "Resume" : "Suspend"}
-                    </button>
-                    <button
-                      onClick={() =>
-                        mutate((s) => {
-                          s.review = s.review.filter((c) => c.id !== r.id);
-                        })
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
+              {selectedCards.map((r) => (
+                <div key={r.id}>
+                  <strong>{r.front.slice(0, 100)}</strong>
+                  <GroupSelect
+                    ctx={ctx}
+                    value={r.groupId}
+                    label={"Group for " + r.front.slice(0, 60)}
+                    onChange={(id) =>
+                      mutate((w) => {
+                        w.review.find((c) => c.id === r.id)!.groupId =
+                          id || undefined;
+                      })
+                    }
+                  />
+                  <small>
+                    {r.suspended
+                      ? "Suspended"
+                      : "Due " + new Date(r.schedule.due).toLocaleString()}
+                  </small>
+                  <input
+                    aria-label={"Reschedule " + r.front}
+                    type="date"
+                    value={r.schedule.due.slice(0, 10)}
+                    onChange={(e) =>
+                      mutate((s) => {
+                        s.review.find((c) => c.id === r.id)!.schedule.due =
+                          new Date(e.target.value + "T12:00:00").toISOString();
+                      })
+                    }
+                  />
+                  <button
+                    onClick={() =>
+                      mutate((s) => {
+                        const c = s.review.find((c) => c.id === r.id)!;
+                        c.suspended = !c.suspended;
+                      })
+                    }
+                  >
+                    {r.suspended ? "Resume" : "Suspend"}
+                  </button>
+                  <button
+                    onClick={() =>
+                      mutate((s) => {
+                        s.review = s.review.filter((c) => c.id !== r.id);
+                      })
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>

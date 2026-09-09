@@ -469,15 +469,26 @@ function restoreManifest(
   for (const group of manifest.settings?.cardGroups ?? []) {
     if (typeof group.title !== "string" || !group.title.trim()) continue;
     const existing = w.settings.cardGroups?.find(
-      (g) => g.title === group.title,
+      (g) =>
+        g.title === group.title && g.containerId === map[group.containerId],
     );
     if (existing) map[group.id] = existing.id;
     else {
       const id = uid();
       map[group.id] = id;
+      const baseTitle = group.title.slice(0, 110);
+      let title = baseTitle,
+        suffix = 2;
+      while (
+        w.settings.cardGroups?.some(
+          (g) => g.title.toLowerCase() === title.toLowerCase(),
+        )
+      )
+        title = `${baseTitle} (${suffix++})`;
       (w.settings.cardGroups ??= []).push({
         id,
-        title: group.title.slice(0, 120),
+        title,
+        containerId: map[group.containerId],
       });
     }
   }

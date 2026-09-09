@@ -123,28 +123,25 @@ test("selection creates a grouped card and a stable link without losing Markdown
     .getByRole("button", { name: "Review", exact: true })
     .click();
   await page
-    .getByText("Manage study-card collections", { exact: true })
+    .getByRole("button", { name: "New study group", exact: true })
     .click();
+  await page.getByRole("textbox", { name: "Group name" }).fill("TEST AI cards");
+  await page.getByRole("button", { name: "Create group", exact: true }).click();
   await page
-    .getByRole("textbox", { name: "New study-card collection name" })
-    .fill("TEST AI cards");
-  await page
-    .getByRole("button", { name: "Create collection", exact: true })
-    .click();
-  await page.getByLabel("Review study-card collection").selectOption("all");
+    .getByRole("combobox", { name: "Study group", exact: true })
+    .selectOption("all");
   await page.getByRole("button", { name: /Manage all .* cards/ }).click();
   await page
-    .getByLabel("Collection for TEST recall question")
+    .getByLabel("Group for TEST recall question")
     .selectOption({ label: "TEST AI cards" });
   await page
-    .getByLabel("Review study-card collection")
+    .getByRole("combobox", { name: "Study group", exact: true })
     .selectOption({ label: "TEST AI cards · 1" });
   await expect(page.locator(".review-question")).toContainText(
     "TEST recall question",
   );
-  await page
-    .getByRole("button", { name: "Remove grouping; keep cards" })
-    .click();
+  await page.getByRole("button", { name: "Edit group", exact: true }).click();
+  await page.getByRole("button", { name: "Delete group · keep cards" }).click();
   await expect(page.locator(".review-manage")).toContainText(
     "TEST recall question",
   );
