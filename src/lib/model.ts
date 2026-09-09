@@ -252,6 +252,7 @@ export interface Settings {
   toolsCompact?: boolean;
   chatHidden?: boolean;
   onboardingComplete?: boolean;
+  dismissedIntroductions?: Record<string, boolean>;
   cardGroups?: { id: ID; title: string; containerId?: ID }[];
   theme: Theme;
   fontSize: number;

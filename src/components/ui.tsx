@@ -82,6 +82,21 @@ export function Modal({
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content
           className={"dialog " + (wide ? "dialog-wide" : "")}
+          onEscapeKeyDown={(event) => {
+            // A nested dialog can be visible before Radix updates its layer
+            // listeners. Always dismiss the dialog currently drawn on top.
+            const top = [
+              ...document.querySelectorAll('.dialog[data-state="open"]'),
+            ].at(-1);
+            const close = top?.querySelector<HTMLButtonElement>(
+              'button[aria-label="Close dialog"]',
+            );
+            if (close) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              close.click();
+            }
+          }}
           onCloseAutoFocus={(e) => {
             if (document.activeElement === document.body) e.preventDefault();
           }}

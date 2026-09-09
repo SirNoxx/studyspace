@@ -38,6 +38,7 @@ import {
   Folder,
   Mail,
   AlertCircle,
+  X,
 } from "lucide-react";
 import type { AppContext } from "./WorkspaceApp";
 import {
@@ -176,13 +177,54 @@ export default function WorkspaceViews({
     description: string,
     action?: React.ReactNode,
   ) => (
-    <header className="view-header">
+    <header
+      className={
+        "view-header" +
+        (w.settings.dismissedIntroductions?.[view]
+          ? " view-header-compact"
+          : "")
+      }
+    >
       <div>
-        <span className="eyebrow">{eyebrow}</span>
-        <h1>{title}</h1>
-        <p>{description}</p>
+        {w.settings.dismissedIntroductions?.[view] ? (
+          <h1>
+            {(
+              {
+                search: "Search",
+                dictionary: "Dictionary",
+                sources: "Sources",
+                journal: "Journal",
+                review: "Review",
+                bookmarks: "Library",
+                discover: "Discover",
+                jobs: "Background jobs",
+                inbox: "Inbox",
+                settings: "Settings",
+              } as Record<string, string>
+            )[view] ?? title}
+          </h1>
+        ) : (
+          <>
+            <span className="eyebrow">{eyebrow}</span>
+            <h1>{title}</h1>
+            <p>{description}</p>
+          </>
+        )}
       </div>
       {action}
+      {!w.settings.dismissedIntroductions?.[view] && (
+        <IconButton
+          label="Dismiss this tab’s introduction"
+          className="dismiss-introduction"
+          onClick={() =>
+            mutate((s) => {
+              (s.settings.dismissedIntroductions ??= {})[view] = true;
+            })
+          }
+        >
+          <X size={16} />
+        </IconButton>
+      )}
     </header>
   );
   const noteRows = (notes: typeof w.notes) => (

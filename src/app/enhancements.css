@@ -43,8 +43,7 @@
   position: absolute;
   right: -4px;
   top: -3px;
-  background: var(--ribbon);
-  border-radius: 4px;
+  background: transparent;
 }
 .inspector-tabs.tools-labeled {
   height: auto;
@@ -1070,4 +1069,72 @@ select:disabled {
   select:not([multiple])::picker-icon {
     transition: none;
   }
+}
+.view-header {
+  position: relative;
+  padding-right: 32px;
+}
+.view-header .dismiss-introduction {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--muted);
+}
+.view-header.view-header-compact {
+  align-items: center;
+  margin-bottom: 18px;
+  padding-right: 0;
+}
+.view-header.view-header-compact h1 {
+  font-family: inherit;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  margin: 0;
+}
+.tree-open {
+  opacity: 0;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  color: var(--muted);
+  border-radius: 4px;
+}
+.tree-row:hover .tree-open,
+.tree-row:focus-within .tree-open {
+  opacity: 1;
+}
+.tree-open:hover {
+  color: var(--accent);
+  background: var(--panel-raised);
+}
+.selected-text-menu {
+  position: fixed;
+  z-index: 65;
+  min-width: 215px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+}
+.selected-text-menu .menu-item {
+  width: 100%;
+  text-align: left;
+}
+.selected-text-menu .menu-item:focus-visible {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+@media (hover: none) {
+  .tree-open {
+    opacity: 1;
+  }
+}
+.welcome-compact h1 {
+  font-family: inherit;
+  font-size: 24px;
+}
+.welcome > .icon-button {
+  align-self: center;
+  margin-bottom: 10px;
 }

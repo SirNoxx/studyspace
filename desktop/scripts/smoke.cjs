@@ -119,10 +119,23 @@ async function closeMain() {
   );
   assert.match(updateConfig, /owner: SirNoxx/);
   assert.match(updateConfig, /repo: studyspace/);
+  await workspace.goto("http://127.0.0.1:47832/demo/review");
+  await workspace
+    .getByRole("button", { name: "Dismiss this tab’s introduction" })
+    .click();
+  await closeMain();
+  ({ workspace, settings } = await launch());
+  await workspace.goto("http://127.0.0.1:47832/demo/review");
+  await expect(
+    workspace.getByRole("button", { name: "Dismiss this tab’s introduction" }),
+  ).toHaveCount(0);
+  await expect(workspace.locator(".view-header-compact h1")).toHaveText(
+    "Review",
+  );
   await closeMain();
   app = null;
   console.log(
-    "PASS: packaged startup, renderer isolation, settings validation, immediate-close save, restart persistence, and GitHub update configuration.",
+    "PASS: packaged startup, renderer isolation, settings validation, immediate-close save, restart persistence, persistent introduction dismissal, and GitHub update configuration.",
   );
   console.log(`Isolated test profile: ${profile}`);
 })().catch(async (error) => {

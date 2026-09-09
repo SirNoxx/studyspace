@@ -1,0 +1,34 @@
+{
+  "version": "1.0.1",
+  "verified_at": "2026-09-09T15:43:12.839568+00:00",
+  "web_domain_tests": 55,
+  "desktop_unit_tests": 9,
+  "production_browser_journeys": 25,
+  "production_browser_result": "All passed in the final full run with two workers",
+  "new_browser_coverage": [
+    "independent dismissal across 11 views and reloads",
+    "collection row and empty-space expansion",
+    "dedicated view button and All Collections return",
+    "full default-name selection and typing replacement",
+    "keyboard and pointer text menus in the editor",
+    "reading passage preservation and viewport fit",
+    "transparent journal quill hover"
+  ],
+  "packaged_verification": [
+    "startup and renderer isolation",
+    "desktop preferences validation",
+    "immediate-close saving",
+    "note title and body persistence after restart",
+    "introduction dismissal persists after a full desktop restart",
+    "GitHub updater configuration",
+    "actual installer download and valid SHA512 verification",
+    "corrupt SHA512 rejection"
+  ],
+  "installer_execution_during_update_test": false,
+  "supabase_migration_required": false,
+  "artifact_sha256": {
+    "Studyspace-Setup-1.0.1-x64.exe": "1aeeac30c4a3c837d26433ba68cfcef077e0e607b33aaa95d0f60abff638115c",
+    "Studyspace-Setup-1.0.1-x64.exe.blockmap": "f0821186b529430f93e7869bcd681481381b4462dc0bd65273c454884939b315",
+    "latest.yml": "43df51843beed994c87c083e7446db850b39626d3cddf5434f982e8577a6983c"
+  }
+}

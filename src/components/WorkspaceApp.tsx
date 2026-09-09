@@ -2,6 +2,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useMemo,
   useState,
@@ -107,6 +108,7 @@ import { browserClient } from "@/lib/supabase/browser";
 import { IconButton, SymbolIcon, Menu, Empty } from "./ui";
 import Markdown from "./Markdown";
 import type { EditorHandle } from "./Editor";
+import TextContextMenu from "./TextContextMenu";
 import Dialogs from "./WorkspaceDialogs";
 import {
   JournalIcon,
@@ -251,6 +253,13 @@ export default function WorkspaceApp({
       if (wRef.current) setW(wRef.current);
     }
   };
+  const renameInput = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (renaming) {
+      renameInput.current?.focus();
+      renameInput.current?.select();
+    }
+  }, [renaming?.id]);
   useEffect(() => {
     if (w?.settings.onboardingComplete === false) {
       setTour(true);
@@ -583,10 +592,15 @@ export default function WorkspaceApp({
     const escapeListener = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       if (e.key === "Escape") {
-        if (document.querySelectorAll('[role="dialog"]').length > 1) return;
+        // Radix owns dialog dismissal. Its inner dialog can unmount before this
+        // document listener runs, so counting remaining dialogs is racy.
+        if (
+          dialog ||
+          (e.target instanceof Element && e.target.closest('[role="dialog"]'))
+        )
+          return;
         setContextMenu(null);
-        if (dialog) setDialog(null);
-        else if (zen) setZen(false);
+        if (zen) setZen(false);
         else if (innerWidth < 800) {
           setRight(false);
           setLeft(false);
@@ -1031,7 +1045,15 @@ export default function WorkspaceApp({
                 });
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter") setFocus(c.id);
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setExpanded((x) =>
+                    x.includes(c.id)
+                      ? x.filter((id) => id !== c.id)
+                      : [...x, c.id],
+                  );
+                }
                 if (e.key === "ArrowRight")
                   setExpanded((x) => [...new Set([...x, c.id])]);
                 if (e.key === "ArrowLeft")
@@ -1050,6 +1072,15 @@ export default function WorkspaceApp({
                       (e.key === "ArrowDown" ? 1 : -1)
                   ]?.focus();
                 }
+              }}
+              onClick={(e) => {
+                if ((e.target as Element).closest("button, input, [role=menu]"))
+                  return;
+                setExpanded((x) =>
+                  x.includes(c.id)
+                    ? x.filter((id) => id !== c.id)
+                    : [...x, c.id],
+                );
               }}
               draggable={!c.system}
               onDragStart={(e) =>
@@ -1092,13 +1123,7 @@ export default function WorkspaceApp({
                 <input
                   className="inline-rename"
                   aria-label="Folder name"
-                  autoFocus
-                  ref={(el) => {
-                    if (el && document.activeElement !== el) {
-                      el.focus();
-                      el.select();
-                    }
-                  }}
+                  ref={renameInput}
                   value={renaming.value}
                   onChange={(e) =>
                     setRenaming({ id: c.id, value: e.target.value })
@@ -1119,12 +1144,30 @@ export default function WorkspaceApp({
               ) : (
                 <button
                   className="tree-title"
-                  title={"Focus " + c.title}
-                  onClick={() => setFocus(c.id)}
+                  aria-label={
+                    (expanded.includes(c.id) ? "Collapse " : "Expand ") +
+                    c.title +
+                    " contents"
+                  }
+                  onClick={() =>
+                    setExpanded((x) =>
+                      x.includes(c.id)
+                        ? x.filter((id) => id !== c.id)
+                        : [...x, c.id],
+                    )
+                  }
                 >
                   {c.title}
                 </button>
               )}
+              <button
+                className="tree-open"
+                title={"Focus " + c.title}
+                aria-label={"Open " + c.title + " in dedicated view"}
+                onClick={() => setFocus(c.id)}
+              >
+                <ArrowRight size={14} />
+              </button>
               <span className="tree-create">
                 <button
                   aria-label={"New folder in " + c.title}
@@ -1876,6 +1919,15 @@ export default function WorkspaceApp({
                   onFocus={(e) => {
                     if (e.target.value === "Untitled") e.target.select();
                   }}
+                  onMouseUp={(e) => {
+                    if (
+                      e.currentTarget.value === "Untitled" &&
+                      mode !== "reading"
+                    ) {
+                      e.preventDefault();
+                      e.currentTarget.select();
+                    }
+                  }}
                   onBlur={() => {
                     newTitleId.current = null;
                   }}
@@ -2077,17 +2129,41 @@ export default function WorkspaceApp({
             </div>
           </>
         ) : view === "collections" ? (
-          <div className="welcome">
-            <div className="welcome-mark">
-              <BookOpen size={40} strokeWidth={1.2} />
-            </div>
-            <span className="eyebrow">A PLACE FOR UNDERSTANDING</span>
-            <h1>Make room for your ideas.</h1>
-            <p>
-              Gather your notes. Connect the dots.
-              <br />
-              Build a little understanding, every day.
-            </p>
+          <div
+            className={
+              "welcome" +
+              (w.settings.dismissedIntroductions?.collections
+                ? " welcome-compact"
+                : "")
+            }
+          >
+            {w.settings.dismissedIntroductions?.collections ? (
+              <h1>Collections</h1>
+            ) : (
+              <>
+                <IconButton
+                  label="Dismiss this tab’s introduction"
+                  onClick={() =>
+                    mutate((s) => {
+                      (s.settings.dismissedIntroductions ??= {}).collections =
+                        true;
+                    })
+                  }
+                >
+                  <X size={16} />
+                </IconButton>
+                <div className="welcome-mark">
+                  <BookOpen size={40} strokeWidth={1.2} />
+                </div>
+                <span className="eyebrow">A PLACE FOR UNDERSTANDING</span>
+                <h1>Make room for your ideas.</h1>
+                <p>
+                  Gather your notes. Connect the dots.
+                  <br />
+                  Build a little understanding, every day.
+                </p>
+              </>
+            )}
             <div className="welcome-actions">
               <button className="primary" onClick={() => addNote()}>
                 <PenLine size={17} /> Start writing
@@ -2111,7 +2187,14 @@ export default function WorkspaceApp({
                 onClick={() => {
                   mutate((s) => {
                     const sample = sampleWorkspace();
-                    Object.assign(s, sample, { revision: s.revision });
+                    Object.assign(s, sample, {
+                      revision: s.revision,
+                      settings: {
+                        ...sample.settings,
+                        dismissedIntroductions:
+                          s.settings.dismissedIntroductions,
+                      },
+                    });
                   });
                   const n = wRef.current!.notes[0];
                   setExpanded(
@@ -2126,17 +2209,19 @@ export default function WorkspaceApp({
                 Explore an editable sample collection <ChevronRight size={14} />
               </button>
             )}
-            <div className="welcome-principles">
-              <span>
-                <Lock size={14} /> Private by default
-              </span>
-              <span>
-                <FileText size={14} /> Yours in Markdown
-              </span>
-              <span>
-                <Link2 size={14} /> Connected by ideas
-              </span>
-            </div>
+            {!w.settings.dismissedIntroductions?.collections && (
+              <div className="welcome-principles">
+                <span>
+                  <Lock size={14} /> Private by default
+                </span>
+                <span>
+                  <FileText size={14} /> Yours in Markdown
+                </span>
+                <span>
+                  <Link2 size={14} /> Connected by ideas
+                </span>
+              </div>
+            )}
           </div>
         ) : (
           <WorkspaceViews
@@ -2285,7 +2370,7 @@ export default function WorkspaceApp({
         (mode === "reading" || selection.trim()) &&
         !dialog && (
           <SelectionToolbar
-            key={active.id + mode}
+            key={"selection-toolbar:" + active.id + ":" + mode}
             selection={selection}
             reading={mode === "reading"}
           >
@@ -2331,6 +2416,30 @@ export default function WorkspaceApp({
           </SelectionToolbar>
         )}
       {view === "collections" && active && <ChatLauncher ctx={ctx} />}
+      {view === "collections" && active && !dialog && (
+        <TextContextMenu
+          key={"text-context:" + active.id + ":" + mode}
+          editor={editor}
+          reading={mode === "reading"}
+          onDictionary={(text) =>
+            setDialog({ type: "definition", value: text, sourceId: active.id })
+          }
+          onCard={(text) =>
+            setDialog({
+              type: "review-card",
+              value: "",
+              answer: text,
+              passage: text,
+              sourceId: active.id,
+            })
+          }
+          onLink={(text) => {
+            setSelection(text);
+            setDialog({ type: "hyperlink" });
+          }}
+          onError={toast}
+        />
+      )}
       {exportProgress && (
         <div className="export-progress" role="status">
           <strong>{exportProgress.message}</strong>
