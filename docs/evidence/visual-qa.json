@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-09T00:30:46.859Z",
+  "checks": [
+    {
+      "theme": "Light",
+      "violations": []
+    },
+    {
+      "theme": "Dark",
+      "violations": []
+    },
+    {
+      "theme": "Paper",
+      "violations": []
+    }
+  ],
+  "viewports": [
+    1280,
+    1920,
+    1024,
+    768
+  ],
+  "method": "Real Chromium screenshots and axe WCAG A/AA including 2.2 tags. No physical screen-reader/IME inspection."
+}

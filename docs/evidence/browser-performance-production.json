@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-09T00:30:40.827Z",
+  "environment": "Windows local Next production server; Playwright chromium",
+  "notes": 10000,
+  "terms": 3000,
+  "characters": 30,
+  "keydownToAnimationFrameMs": {
+    "p50": 8.900000005960464,
+    "p95": 17.900000005960464,
+    "max": 47.5
+  },
+  "cachedSwitchIncludingPlaywrightMs": 169,
+  "targets": {
+    "typingFrameMs": 16,
+    "cachedSwitchMs": 200
+  },
+  "limits": "Synthetic key events and local device storage; network/database latency and IME are not measured."
+}

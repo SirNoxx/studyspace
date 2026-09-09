@@ -1,0 +1,29 @@
+{
+  "at": "2026-09-08T23:08:01.160Z",
+  "results": [
+    {
+      "input": "10.1038/nphys1170",
+      "status": "live-success",
+      "provider": "Crossref",
+      "title": "Measured measurement",
+      "metadataStatus": "ready",
+      "durationMs": 366
+    },
+    {
+      "input": "arXiv:2303.08774v2",
+      "status": "live-success",
+      "provider": "arXiv",
+      "title": "GPT-4 Technical Report",
+      "metadataStatus": "ready",
+      "durationMs": 315
+    },
+    {
+      "input": "9780306406157",
+      "status": "live-success",
+      "provider": "Open Library",
+      "title": "Error-correction coding for digital communications",
+      "metadataStatus": "ready",
+      "durationMs": 5317
+    }
+  ]
+}
