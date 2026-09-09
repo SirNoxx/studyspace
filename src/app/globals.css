@@ -182,7 +182,8 @@ svg {
   flex-shrink: 0;
 }
 ::selection {
-  background: var(--selection);
+  background: color-mix(in srgb, var(--selection) 45%, transparent);
+  color: var(--text);
 }
 .sr-only {
   position: absolute;
@@ -3396,6 +3397,7 @@ input.note-title {
 }
 .textLayer ::selection {
   background: #7eb3d477;
+  color: transparent;
 }
 .pdf-highlight {
   position: absolute;

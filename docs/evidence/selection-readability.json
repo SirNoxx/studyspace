@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-09T06:54:33.449Z",
+  "productionBuild": "passed",
+  "checks": [
+    {
+      "theme": "light",
+      "foreground": "rgb(48, 61, 57)",
+      "background": "color(srgb 0.854902 0.909804 0.862745 / 0.45)"
+    },
+    {
+      "theme": "dark",
+      "foreground": "rgb(214, 224, 215)",
+      "background": "color(srgb 0.25098 0.364706 0.270588 / 0.45)"
+    },
+    {
+      "theme": "paper",
+      "foreground": "rgb(60, 69, 64)",
+      "background": "color(srgb 0.862745 0.901961 0.835294 / 0.45)"
+    },
+    {
+      "theme": "space",
+      "foreground": "rgb(236, 227, 244)",
+      "background": "color(srgb 0.392157 0.270588 0.435294 / 0.45)"
+    }
+  ],
+  "reading": {
+    "foreground": "rgb(236, 227, 244)",
+    "background": "color(srgb 0.392157 0.270588 0.435294 / 0.45)"
+  }
+}

@@ -273,8 +273,9 @@ export default function Editor({
             ".cm-gutters": { display: "none" },
             ".cm-activeLine": { background: "transparent" },
             "&.cm-focused": { outline: "none" },
-            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-              background: "var(--selection)",
+            "& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+              background:
+                "color-mix(in srgb, var(--selection) 45%, transparent)",
             },
             ".cm-panels": { background: "var(--panel)", color: "var(--text)" },
             ".cm-tooltip": {
