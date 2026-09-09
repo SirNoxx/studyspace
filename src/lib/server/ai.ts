@@ -68,7 +68,7 @@ export function buildAIContext(w: Workspace, input: AIInput) {
     passages,
     definitions,
     anchors,
-    approach: subject.approach,
+    approach: "mixed",
     allowedIds: new Set(
       [...passages, ...definitions, ...anchors].map((p) => p.id),
     ),

@@ -16,28 +16,35 @@ export async function localDB() {
     },
   });
 }
-export async function loadLocal(sample = false) {
+export async function loadLocal(sample = false, key = "demo") {
   const db = await localDB();
-  let w = (await db.get("workspaces", "demo")) as Workspace | undefined;
+  let w = (await db.get("workspaces", key)) as Workspace | undefined;
   if (!w) {
     w = sample ? sampleWorkspace() : emptyWorkspace();
-    await db.put("workspaces", w, "demo");
+    await db.put("workspaces", w, key);
   }
-  if (!(await db.get("workspaces", "before-enhancements:demo")))
+  if (
+    key === "demo" &&
+    !(await db.get("workspaces", "before-enhancements:demo"))
+  )
     await db.put("workspaces", w, "before-enhancements:demo");
   return normalizeWorkspace(w);
 }
-export async function persistLocal(w: Workspace, expected: number) {
+export async function persistLocal(
+  w: Workspace,
+  expected: number,
+  key = "demo",
+) {
   validateWorkspace(w);
   const db = await localDB();
   const tx = db.transaction("workspaces", "readwrite");
-  const current = (await tx.store.get("demo")) as Workspace | undefined;
+  const current = (await tx.store.get(key)) as Workspace | undefined;
   if (current && current.revision !== expected) {
     tx.abort();
     throw new Error("CONFLICT");
   }
   const next = { ...w, revision: expected + 1 };
-  await tx.store.put(next, "demo");
+  await tx.store.put(next, key);
   await tx.done;
   return next.revision;
 }

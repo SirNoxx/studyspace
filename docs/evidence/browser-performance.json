@@ -1,15 +1,15 @@
 {
-  "date": "2026-09-09T15:38:48.186Z",
-  "environment": "Windows; Next.js production server at 127.0.0.1:3000; Playwright Chromium with two workers",
+  "date": "2026-09-09T20:11:55.159Z",
+  "environment": "Windows local Next development server; Playwright chromium",
   "notes": 10000,
   "terms": 3000,
   "characters": 30,
   "keydownToAnimationFrameMs": {
-    "p50": 10,
-    "p95": 17.600000023841858,
-    "max": 39.19999998807907
+    "p50": 9.900000005960464,
+    "p95": 77.60000002384186,
+    "max": 129.30000001192093
   },
-  "cachedSwitchIncludingPlaywrightMs": 222,
+  "cachedSwitchIncludingPlaywrightMs": 917,
   "targets": {
     "typingFrameMs": 16,
     "cachedSwitchMs": 200

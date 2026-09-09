@@ -6,6 +6,7 @@ import {
   keymap,
   drawSelection,
   highlightActiveLine,
+  placeholder,
   Decoration,
   ViewPlugin,
   type DecorationSet,
@@ -23,14 +24,18 @@ import {
   defaultHighlightStyle,
   bracketMatching,
   syntaxTree,
+  HighlightStyle,
 } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import {
   closeBrackets,
   closeBracketsKeymap,
   autocompletion,
 } from "@codemirror/autocomplete";
 import { conceptMatches } from "@/lib/markdown";
-import type { Definition } from "@/lib/model";
+import type { Definition, Attachment } from "@/lib/model";
+import { findAttachment } from "@/lib/attachments";
+import { EditorImage } from "./EditorImage";
 export interface EditorHandle {
   insert: (text: string) => void;
   wrap: (left: string, right: string) => void;
@@ -49,6 +54,8 @@ export default function Editor({
   onAttach,
   handle,
   notes,
+  attachments,
+  demo,
 }: {
   id: string;
   body: string;
@@ -60,6 +67,8 @@ export default function Editor({
   onAttach: (files: File[]) => void;
   handle: React.MutableRefObject<EditorHandle | null>;
   notes: { id: string; title: string }[];
+  attachments: Attachment[];
+  demo: boolean;
 }) {
   const parent = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null),
@@ -75,6 +84,8 @@ export default function Editor({
   definitionsRef.current = definitions;
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const extensions = () => {
     const visual = ViewPlugin.fromClass(
       class {
@@ -93,6 +104,25 @@ export default function Editor({
               from: v.viewport.from,
               to: v.viewport.to,
               enter(node) {
+                if (node.name === "Image") {
+                  const source = v.state.sliceDoc(node.from, node.to);
+                  const target = /\]\((attachment:[^)]+)\)$/.exec(source)?.[1];
+                  const asset =
+                    target && findAttachment(attachmentsRef.current, target);
+                  if (
+                    asset &&
+                    /^image\/(png|jpeg|webp|gif)$/.test(asset.mime)
+                  ) {
+                    marks.push({
+                      from: node.from,
+                      to: node.to,
+                      value: Decoration.replace({
+                        widget: new EditorImage(asset, demo),
+                      }),
+                    });
+                    return false;
+                  }
+                }
                 if (/^ATXHeading[1-6]$/.test(node.name))
                   marks.push({
                     from: node.from,
@@ -167,12 +197,22 @@ export default function Editor({
         extensions: [
           history(),
           drawSelection(),
+          placeholder("Type here..."),
           highlightActiveLine(),
           highlightSelectionMatches(),
           bracketMatching(),
           closeBrackets(),
           markdown({ base: markdownLanguage }),
           syntaxHighlighting(defaultHighlightStyle),
+          syntaxHighlighting(
+            HighlightStyle.define([
+              {
+                tag: [tags.link, tags.url],
+                color: "var(--note-link)",
+                textDecoration: "underline",
+              },
+            ]),
+          ),
           autocompletion({
             override: [
               (ctx) => {
@@ -267,16 +307,24 @@ export default function Editor({
             },
             ".cm-content": {
               padding: "0 0 140px",
-              caretColor: "var(--accent)",
+              caretColor: "var(--typing-caret)",
+            },
+            ".cm-cursor, .cm-dropCursor": {
+              borderLeftColor: "var(--typing-caret)",
+            },
+            ".cm-placeholder": {
+              color: "var(--placeholder)",
+              fontStyle: "normal",
             },
             ".cm-line": { padding: "0" },
             ".cm-gutters": { display: "none" },
             ".cm-activeLine": { background: "transparent" },
             "&.cm-focused": { outline: "none" },
-            "& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-              background:
-                "color-mix(in srgb, var(--selection) 45%, transparent)",
-            },
+            "& > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground":
+              {
+                background:
+                  "color-mix(in srgb, var(--selection) 45%, transparent)",
+              },
             ".cm-panels": { background: "var(--panel)", color: "var(--text)" },
             ".cm-tooltip": {
               background: "var(--panel)",
@@ -353,6 +401,6 @@ export default function Editor({
     view.current?.dispatch({
       effects: compartment.current.reconfigure(extensions()),
     });
-  }, [mode, definitions]);
+  }, [mode, definitions, attachments]);
   return <div className={"editor-host mode-" + mode} ref={parent} />;
 }

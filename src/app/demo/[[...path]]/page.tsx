@@ -1,4 +1,4 @@
-import WorkspaceApp from "@/components/WorkspaceApp";
+import DeviceWorkspace from "@/components/DeviceWorkspace";
 export default function Demo() {
-  return <WorkspaceApp demo account="demo" />;
+  return <DeviceWorkspace />;
 }

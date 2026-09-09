@@ -20,46 +20,6 @@ export const categories = [
   "Business",
   "Other",
 ];
-export const methods = [
-  {
-    id: "mixed",
-    name: "Flexible study",
-    description:
-      "Combine reading, examples, and recall as your material changes.",
-    use: "Exploring a new subject or varied research.",
-    symbol: "mixed",
-  },
-  {
-    id: "concise summaries",
-    name: "Concise summaries",
-    description: "Distill a topic into its key ideas and useful connections.",
-    use: "Reading notes, revision, and big-picture understanding.",
-    symbol: "summary",
-  },
-  {
-    id: "worked examples",
-    name: "Worked examples",
-    description:
-      "Follow a problem step by step, then try a variation yourself.",
-    use: "Mathematics, programming, and practical processes.",
-    symbol: "steps",
-  },
-  {
-    id: "question-and-answer practice",
-    name: "Question & answer",
-    description: "Practice retrieving an answer before revealing your notes.",
-    use: "Terminology, exam revision, and spaced review.",
-    symbol: "cards",
-  },
-  {
-    id: "visual explanations",
-    name: "Visual explanations",
-    description:
-      "Use diagrams, relationships, and evidence alongside your writing.",
-    use: "Systems, processes, and connected ideas.",
-    symbol: "visual",
-  },
-];
 export const extraThemes = [
   { id: "winter", label: "Winter", colors: ["#edf5fc", "#24587d", "#c9e4f3"] },
   { id: "spring", label: "Spring", colors: ["#f0f7ee", "#356444", "#cddfb7"] },

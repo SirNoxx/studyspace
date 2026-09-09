@@ -231,6 +231,10 @@ export interface Notification {
   createdAt: string;
 }
 export interface AIRecord {
+  chatId?: ID;
+  question?: string;
+  scope?: "selection" | "note" | "subject";
+  responseStyle?: string;
   id: ID;
   noteId: ID;
   revision: number;
@@ -248,6 +252,7 @@ export interface AIRecord {
   evidence?: { id: string; text: string; title?: string; locator?: string }[];
 }
 export interface Settings {
+  workspaceName?: string;
   ribbonCompact?: boolean;
   toolsCompact?: boolean;
   chatHidden?: boolean;

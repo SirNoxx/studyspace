@@ -68,6 +68,11 @@ test("Markdown import, keyboard dictionary palette, export and paper dialog acce
     page.getByRole("heading", { name: "Tool calling", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Close dialog" }).click();
+  const all = page.getByRole("button", {
+    name: "All Collections",
+    exact: true,
+  });
+  if (await all.isVisible()) await all.click();
   await page
     .getByRole("button", { name: "Create collection or subject" })
     .click();

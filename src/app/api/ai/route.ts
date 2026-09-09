@@ -39,6 +39,18 @@ export async function POST(request: Request) {
         scope: z.enum(["selection", "note", "subject"]),
         selection: z.string().max(45000).optional(),
         question: z.string().max(4000).optional(),
+        responseStyle: z
+          .enum(["balanced", "concise", "detailed", "socratic"])
+          .optional(),
+        history: z
+          .array(
+            z.object({
+              question: z.string().max(4000),
+              answer: z.string().max(6000),
+            }),
+          )
+          .max(4)
+          .optional(),
         expectedRevision: z.number().int(),
         explicitSensitive: z.boolean().optional(),
       })
@@ -95,6 +107,8 @@ export async function POST(request: Request) {
           input: JSON.stringify({
             task: input.action,
             question: input.question,
+            responseStyle: input.responseStyle ?? "balanced",
+            conversation: input.history ?? [],
             studyApproach: context.approach,
             passages: context.passages,
             definitions: context.definitions,

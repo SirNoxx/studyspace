@@ -17,7 +17,6 @@ import {
 import type { AppContext } from "./WorkspaceApp";
 import { Modal, Field, SymbolIcon } from "./ui";
 import {
-  methods,
   extraThemes,
   calendarDays,
   dateParts,
@@ -27,7 +26,6 @@ import {
 } from "@/lib/enhancements";
 import { ancestry, localDate, now, type Theme } from "@/lib/model";
 import AttachmentMedia from "./AttachmentMedia";
-import AIStudy from "./study/AIStudy";
 import { saveNote } from "@/lib/domain";
 
 export function JournalIcon({ size = 20 }: { size?: number }) {
@@ -42,111 +40,7 @@ export function JournalIcon({ size = 20 }: { size?: number }) {
     </span>
   );
 }
-function MethodArt({ kind }: { kind: string }) {
-  return (
-    <svg className="method-art" viewBox="0 0 220 90" aria-hidden="true">
-      <rect
-        x="24"
-        y="10"
-        width="172"
-        height="70"
-        rx="12"
-        fill="var(--accent-soft)"
-      />
-      {kind === "visual" ? (
-        <g stroke="var(--accent)" fill="var(--panel-raised)" strokeWidth="2">
-          <path d="M65 45H150M110 30V65" />
-          <circle cx="65" cy="45" r="12" />
-          <circle cx="150" cy="45" r="16" />
-          <circle cx="110" cy="25" r="10" />
-          <circle cx="110" cy="65" r="10" />
-        </g>
-      ) : kind === "cards" ? (
-        <g fill="var(--panel-raised)" stroke="var(--accent)" strokeWidth="2">
-          <rect
-            x="55"
-            y="24"
-            width="62"
-            height="43"
-            rx="5"
-            transform="rotate(-8 55 24)"
-          />
-          <rect x="102" y="26" width="62" height="43" rx="5" />
-          <text x="77" y="52" fill="var(--accent)" stroke="none" fontSize="24">
-            ?
-          </text>
-          <path d="m122 47 7 7 15-17" fill="none" />
-        </g>
-      ) : (
-        <g stroke="var(--accent)" strokeWidth="3" strokeLinecap="round">
-          <path d="M55 30h105M55 45h75M55 60h90" />
-          {kind === "steps" && <path d="m174 35 10 10-10 10" fill="none" />}
-          {kind === "mixed" && (
-            <circle cx="160" cy="58" r="13" fill="var(--panel-raised)" />
-          )}
-        </g>
-      )}
-    </svg>
-  );
-}
-export function MethodPicker({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const chosen = methods.find((m) => m.id === value) ?? methods[0];
-  return (
-    <>
-      <button
-        type="button"
-        className="method-choice"
-        onClick={() => setOpen(true)}
-      >
-        <MethodArt kind={chosen.symbol} />
-        <span>
-          <strong>{chosen.name}</strong>
-          <small>{chosen.description}</small>Choose study method
-        </span>
-      </button>
-      {open && (
-        <Modal
-          title="How would you like to study?"
-          description="Choose a method to guide your work. You can combine approaches; these are preferences, not fixed learning types."
-          wide
-          onClose={() => setOpen(false)}
-        >
-          <div className="method-grid">
-            {methods.map((m) => (
-              <button
-                type="button"
-                key={m.id}
-                aria-pressed={value === m.id}
-                className={
-                  "method-option " + (value === m.id ? "selected" : "")
-                }
-                onClick={() => {
-                  onChange(m.id);
-                  setOpen(false);
-                }}
-              >
-                <MethodArt kind={m.symbol} />
-                <strong>
-                  {m.name}
-                  {value === m.id && <Check size={16} />}
-                </strong>
-                <p>{m.description}</p>
-                <small>Useful for: {m.use}</small>
-              </button>
-            ))}
-          </div>
-        </Modal>
-      )}
-    </>
-  );
-}
+
 export function ThemeExtras({ ctx }: { ctx: AppContext }) {
   return (
     <div className="theme-options seasonal-themes">
@@ -543,14 +437,13 @@ export function HyperlinkDialog({
   );
 }
 export function ChatLauncher({ ctx }: { ctx: AppContext }) {
-  const [open, setOpen] = useState(false);
   if (ctx.w.settings.chatHidden) return null;
   return (
     <>
       <div className="chat-launcher">
         <button
           className="secondary"
-          onClick={() => setOpen(true)}
+          onClick={ctx.openChat}
           aria-label="Open AI Chat"
         >
           <MessageCircle size={18} />
@@ -568,15 +461,6 @@ export function ChatLauncher({ ctx }: { ctx: AppContext }) {
           <X size={13} />
         </button>
       </div>
-      {open && (
-        <Modal
-          title="AI Chat"
-          description="A little help thinking things through. Explore a topic, clarify your notes, or practice what you know. You choose the context each time."
-          onClose={() => setOpen(false)}
-        >
-          <AIStudy ctx={ctx} />
-        </Modal>
-      )}
     </>
   );
 }

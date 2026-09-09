@@ -69,6 +69,7 @@ import {
   AlertCircle,
   Paperclip,
 } from "lucide-react";
+import WorkspaceManager from "./WorkspaceManager";
 import {
   type Workspace,
   type Note,
@@ -148,6 +149,7 @@ export interface AppContext {
   addNote: (parentId?: string) => void;
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
+  openChat: () => void;
   toast: (message: string) => void;
   recoverDraft: (draft?: Workspace) => Promise<void>;
   signOut: () => Promise<void>;
@@ -179,9 +181,13 @@ const inspectorTabs = [
 export default function WorkspaceApp({
   demo = false,
   account,
+  localKey = "demo",
+  onWorkspaceSwitch,
 }: {
   demo?: boolean;
   account: string;
+  localKey?: string;
+  onWorkspaceSwitch?: (id: string) => void;
 }) {
   const [w, setW] = useState<Workspace | null>(null),
     wRef = useRef<Workspace | null>(null),
@@ -274,6 +280,10 @@ export default function WorkspaceApp({
       addFolder(String(value.parentId ?? focus ?? general(wRef.current!).id));
       return;
     }
+    if (value?.type === "rename") {
+      beginRename(String(value.id));
+      return;
+    }
     setDialogState(value);
   };
   const definitionsForNote = useMemo(
@@ -340,6 +350,7 @@ export default function WorkspaceApp({
         const state = demo
           ? await loadLocal(
               new URLSearchParams(location.search).get("sample") === "1",
+              localKey,
             )
           : await fetch("/api/workspace").then(async (r) => {
               const d = await r.json();
@@ -416,7 +427,7 @@ export default function WorkspaceApp({
     setSaveStatus(demo ? "Saving on this device…" : "Saving…");
     try {
       const revision = demo
-        ? await persistLocal(snapshot, snapshot.revision)
+        ? await persistLocal(snapshot, snapshot.revision, localKey)
         : await saveRemote(
             snapshot,
             snapshot.revision,
@@ -641,6 +652,13 @@ export default function WorkspaceApp({
       id = createNote(s, parentId ?? focus ?? general(s).id).id;
     });
     if (!id) return;
+    const note = wRef.current!.notes.find((n) => n.id === id)!;
+    setExpanded((old) => [
+      ...new Set([
+        ...old,
+        ...ancestry(wRef.current!, note.containerId).map((c) => c.id),
+      ]),
+    ]);
     newTitleId.current = id;
     if (mode === "reading") setMode("live");
     openNote(id);
@@ -667,18 +685,62 @@ export default function WorkspaceApp({
       setViewState("collections");
     }
   };
+  const beginRename = (id: string) => {
+    const workspace = wRef.current!;
+    const container = workspace.containers.find((c) => c.id === id);
+    const note = workspace.notes.find((n) => n.id === id);
+    if (!container && !note) return;
+    const path = ancestry(
+      workspace,
+      container?.parentId ?? note?.containerId ?? "",
+    );
+    if (focus === id || (focus && !path.some((c) => c.id === focus)))
+      setFocus(null);
+    setViewState("collections");
+    setLeft(true);
+    setTreeQuery("");
+    setExpanded((old) => [...new Set([...old, ...path.map((c) => c.id)])]);
+    setRenaming({ id, value: container?.title ?? note!.title });
+  };
   const finishRename = () => {
     if (!renaming) return;
-    const title = renaming.value.trim() || "Untitled";
-    mutate((s) => {
-      const c = s.containers.find((c) => c.id === renaming.id);
-      if (c) {
-        c.title = title.slice(0, 240);
-        c.updatedAt = now();
-      }
-    });
+    const title = renaming.value.trim().slice(0, 240);
+    if (title)
+      mutate((s) => {
+        const c = s.containers.find((c) => c.id === renaming.id);
+        const n = s.notes.find((n) => n.id === renaming.id);
+        if (c && c.title !== title) {
+          c.title = title;
+          c.updatedAt = now();
+        } else if (n && n.title !== title) {
+          saveNote(s, n.id, n.revision, { title }, "Rename");
+        }
+      });
     setRenaming(null);
   };
+  const renameField = (id: string, label: string) => (
+    <input
+      className="inline-rename"
+      aria-label={label}
+      ref={renameInput}
+      maxLength={240}
+      value={renaming?.value ?? ""}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setRenaming({ id, value: e.target.value })}
+      onBlur={finishRename}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === "Enter" || e.key === "Escape") {
+          e.preventDefault();
+          const row = e.currentTarget.closest<HTMLElement>('[role="treeitem"]');
+          if (e.key === "Enter") finishRename();
+          else setRenaming(null);
+          requestAnimationFrame(() => row?.focus());
+        }
+      }}
+    />
+  );
   const exportData = async (
     options: { containerId?: string; noteId?: string; full?: boolean } = {},
   ) => {
@@ -787,7 +849,11 @@ export default function WorkspaceApp({
             s,
             n.id,
             note.revision,
-            { body: note.body + `\n[${file.name}](attachment:${id})\n` },
+            {
+              body:
+                note.body +
+                `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`,
+            },
             "Attachment",
           );
         }, "Attachment added.");
@@ -810,6 +876,12 @@ export default function WorkspaceApp({
       </div>
     );
   const ctx: AppContext = {
+    openChat: () => {
+      setZen(false);
+      setRight(true);
+      setInspector("ai");
+      if (innerWidth < 800) setLeft(false);
+    },
     w,
     addNote,
     mutate,
@@ -831,7 +903,7 @@ export default function WorkspaceApp({
       if (saving.current)
         throw new Error("Wait for the current save to finish.");
       const latest = demo
-        ? await loadLocal()
+        ? await loadLocal(false, localKey)
         : await fetch("/api/workspace").then(async (r) => {
             if (!r.ok)
               throw new Error("Saved workspace unavailable. Try again.");
@@ -1015,6 +1087,12 @@ export default function WorkspaceApp({
               ? b.createdAt.localeCompare(a.createdAt)
               : 0,
       );
+    const orderedNotes = sorted(notes);
+    const renameIndex = orderedNotes.findIndex((n) => n.id === renaming?.id);
+    const page =
+      renameIndex >= 0
+        ? Math.floor(renameIndex / 200)
+        : (treePages[parentId ?? "root"] ?? 0);
     return (
       <>
         {sorted(containers).map((c) => (
@@ -1033,6 +1111,12 @@ export default function WorkspaceApp({
               style={
                 {
                   "--collection-color": c.color,
+                  "--folder-color": [
+                    "#a6b7d9",
+                    "#c9afcf",
+                    "#d8bd8a",
+                    "#93c8b5",
+                  ][(ancestry(w, c.id).length - 1) % 4],
                   paddingLeft: 12 + depth * 17,
                 } as CSSProperties
               }
@@ -1120,27 +1204,10 @@ export default function WorkspaceApp({
                 size={16}
               />
               {renaming?.id === c.id ? (
-                <input
-                  className="inline-rename"
-                  aria-label="Folder name"
-                  ref={renameInput}
-                  value={renaming.value}
-                  onChange={(e) =>
-                    setRenaming({ id: c.id, value: e.target.value })
-                  }
-                  onBlur={finishRename}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      finishRename();
-                    }
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      setRenaming(null);
-                    }
-                  }}
-                />
+                renameField(
+                  c.id,
+                  c.kind === "folder" ? "Folder name" : "Collection name",
+                )
               ) : (
                 <button
                   className="tree-title"
@@ -1201,74 +1268,72 @@ export default function WorkspaceApp({
             )}
           </div>
         ))}
-        {sorted(notes)
-          .slice(
-            (treePages[parentId ?? "root"] ?? 0) * 200,
-            ((treePages[parentId ?? "root"] ?? 0) + 1) * 200,
-          )
-          .map((n) => (
-            <div
-              key={n.id}
-              role="treeitem"
-              aria-selected={activeId === n.id}
-              tabIndex={0}
-              className={
-                "tree-row note-row " +
-                (activeId === n.id ? "is-active " : "") +
-                (selected.includes(n.id) ? "selected" : "")
+        {orderedNotes.slice(page * 200, (page + 1) * 200).map((n) => (
+          <div
+            key={n.id}
+            role="treeitem"
+            aria-selected={activeId === n.id}
+            tabIndex={0}
+            className={
+              "tree-row note-row " +
+              (activeId === n.id ? "is-active " : "") +
+              (selected.includes(n.id) ? "selected" : "")
+            }
+            style={{ paddingLeft: depth * 17 + 30 }}
+            onClick={(e) => {
+              if (e.ctrlKey || e.metaKey)
+                setSelected((s) =>
+                  s.includes(n.id)
+                    ? s.filter((id) => id !== n.id)
+                    : [...s, n.id],
+                );
+              else {
+                setSelected([n.id]);
+                openNote(n.id);
               }
-              style={{ paddingLeft: depth * 17 + 30 }}
-              onClick={(e) => {
-                if (e.ctrlKey || e.metaKey)
-                  setSelected((s) =>
-                    s.includes(n.id)
-                      ? s.filter((id) => id !== n.id)
-                      : [...s, n.id],
-                  );
-                else {
-                  setSelected([n.id]);
-                  openNote(n.id);
-                }
-              }}
-              onAuxClick={(e) => {
-                if (e.button === 1) openNote(n.id, true);
-              }}
-              onContextMenu={(e) => {
+            }}
+            onAuxClick={(e) => {
+              if (e.button === 1) openNote(n.id, true);
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({
+                x: Math.min(e.clientX, innerWidth - 230),
+                y: Math.min(e.clientY, innerHeight - 380),
+                id: n.id,
+              });
+            }}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter") openNote(n.id);
+              if (e.key === "F2")
+                setDialog({ type: "rename", id: n.id, value: n.title });
+              if (e.key === "Delete") mutate((s) => trashItems(s, [n.id]));
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                 e.preventDefault();
-                setContextMenu({
-                  x: Math.min(e.clientX, innerWidth - 230),
-                  y: Math.min(e.clientY, innerHeight - 380),
-                  id: n.id,
-                });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") openNote(n.id);
-                if (e.key === "F2")
-                  setDialog({ type: "rename", id: n.id, value: n.title });
-                if (e.key === "Delete") mutate((s) => trashItems(s, [n.id]));
-                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                  e.preventDefault();
-                  const rows = [
-                    ...document.querySelectorAll<HTMLElement>(
-                      "[role=treeitem]",
-                    ),
-                  ];
-                  rows[
-                    rows.indexOf(e.currentTarget) +
-                      (e.key === "ArrowDown" ? 1 : -1)
-                  ]?.focus();
-                }
-              }}
-              draggable
-              onDragStart={(e) =>
-                e.dataTransfer.setData("application/studyspace", n.id)
+                const rows = [
+                  ...document.querySelectorAll<HTMLElement>("[role=treeitem]"),
+                ];
+                rows[
+                  rows.indexOf(e.currentTarget) +
+                    (e.key === "ArrowDown" ? 1 : -1)
+                ]?.focus();
               }
-            >
-              <FileText size={14} />
+            }}
+            draggable={renaming?.id !== n.id}
+            onDragStart={(e) =>
+              e.dataTransfer.setData("application/studyspace", n.id)
+            }
+          >
+            <FileText size={14} />
+            {renaming?.id === n.id ? (
+              renameField(n.id, "File name")
+            ) : (
               <span className="tree-title">{n.title || "Untitled"}</span>
-              {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
-            </div>
-          ))}
+            )}
+            {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
+          </div>
+        ))}
         {notes.length > 200 && (
           <div className="tree-pagination" role="none">
             <button
@@ -1435,6 +1500,20 @@ export default function WorkspaceApp({
               <span className="ribbon-label">Settings</span>
             )}
           </IconButton>
+          {!right && (
+            <IconButton
+              label="Open inspector"
+              onClick={() => {
+                setZen(false);
+                setRight(true);
+              }}
+            >
+              <PanelRightOpen size={19} />
+              {!w.settings.ribbonCompact && (
+                <span className="ribbon-label">Notes & Sources</span>
+              )}
+            </IconButton>
+          )}
           <button
             className="avatar"
             aria-label="Account settings"
@@ -1460,16 +1539,15 @@ export default function WorkspaceApp({
             </header>
             <button
               className="workspace-selector"
-              onClick={() => setDialog({ type: "palette" })}
+              onClick={() => setDialog({ type: "workspaces" })}
+              aria-label="Manage workspaces"
             >
               <span className="workspace-avatar">
                 {w.settings.displayName.slice(0, 1)}
               </span>
               <span>
-                My workspace
-                <small>
-                  {demo ? "Local demo · on this device" : "Private workspace"}
-                </small>
+                {w.settings.workspaceName ?? "My workspace"}
+                <small>{demo ? "On this device" : "Private workspace"}</small>
               </span>
             </button>
             <button
@@ -1501,6 +1579,7 @@ export default function WorkspaceApp({
               <span>Find a note…</span>
               <kbd>Ctrl O</kbd>
             </button>
+            <hr className="explorer-divider" />
             <div className="tree-heading">
               {focused ? (
                 <button
@@ -1529,23 +1608,25 @@ export default function WorkspaceApp({
                     }),
                   )}
                 />
-                <IconButton
-                  label="Create collection or subject"
-                  onClick={() =>
-                    setDialog({
-                      type: "container",
-                      parentId: focus ?? undefined,
-                    })
-                  }
-                >
-                  <Plus size={16} />
-                </IconButton>
+                {!focused && (
+                  <IconButton
+                    label="Create collection or subject"
+                    onClick={() =>
+                      setDialog({
+                        type: "container",
+                        parentId: focus ?? undefined,
+                      })
+                    }
+                  >
+                    <Plus size={16} />
+                  </IconButton>
+                )}
               </div>
             </div>
             {focused && (
               <div
                 className="focused-collection"
-                style={{ color: focused.color }}
+                style={{ "--collection-color": focused.color } as CSSProperties}
               >
                 <SymbolIcon name={focused.icon} size={19} />
                 <strong>{focused.title}</strong>
@@ -1584,6 +1665,22 @@ export default function WorkspaceApp({
               >
                 {renderTree(focus)}
               </div>
+
+              {!w.notes.length && (
+                <p className="tree-hint">
+                  A little space for everything you’re learning.
+                </p>
+              )}
+              {!focused && (
+                <button
+                  className="new-collection"
+                  onClick={() => setDialog({ type: "container" })}
+                >
+                  <Plus size={14} /> New collection
+                </button>
+              )}
+            </div>
+            <div className="explorer-footer">
               {focused && (
                 <div className="managed-views">
                   <button onClick={() => setView("dictionary")}>
@@ -1625,19 +1722,6 @@ export default function WorkspaceApp({
                   </button>
                 </div>
               )}
-              {!w.notes.length && (
-                <p className="tree-hint">
-                  A little space for everything you’re learning.
-                </p>
-              )}
-              <button
-                className="new-collection"
-                onClick={() => setDialog({ type: "container" })}
-              >
-                <Plus size={14} /> New collection
-              </button>
-            </div>
-            <div className="explorer-footer">
               <button onClick={() => setDialog({ type: "palette" })}>
                 <Command size={15} /> Command palette <kbd>Ctrl P</kbd>
               </button>
@@ -1750,18 +1834,6 @@ export default function WorkspaceApp({
             >
               {zen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
             </IconButton>
-            {!zen && (
-              <IconButton
-                label={right ? "Close inspector" : "Open inspector"}
-                onClick={() => setRight(!right)}
-              >
-                {right ? (
-                  <PanelRightClose size={17} />
-                ) : (
-                  <PanelRightOpen size={17} />
-                )}
-              </IconButton>
-            )}
           </div>
         </div>
         {(conflict || recovery) && (
@@ -1928,6 +2000,16 @@ export default function WorkspaceApp({
                       e.currentTarget.select();
                     }
                   }}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.nativeEvent.isComposing &&
+                      mode !== "reading"
+                    ) {
+                      e.preventDefault();
+                      editor.current?.focus();
+                    }
+                  }}
                   onBlur={() => {
                     newTitleId.current = null;
                   }}
@@ -2035,6 +2117,8 @@ export default function WorkspaceApp({
                     <Editor
                       id={active.id}
                       body={active.body}
+                      attachments={w.attachments}
+                      demo={demo}
                       mode={mode === "reading" ? "live" : mode}
                       onChange={(body) => {
                         if (
@@ -2365,6 +2449,31 @@ export default function WorkspaceApp({
           </aside>
         </>
       )}
+      {dialog?.type === "workspaces" && (
+        <WorkspaceManager
+          ctx={ctx}
+          localKey={localKey}
+          onClose={() => setDialog(null)}
+          switchWorkspace={async (id) => {
+            flushRender();
+            await persist();
+            if (
+              pending.current ||
+              saving.current ||
+              conflictRef.current ||
+              recovery
+            )
+              throw new Error(
+                "Finish saving or resolve the retained draft before switching workspaces. Your current workspace is still open.",
+              );
+            if (demo && id === localKey) return;
+            if (saveTimer.current) clearTimeout(saveTimer.current);
+            if (draftTimer.current) clearTimeout(draftTimer.current);
+            if (onWorkspaceSwitch) onWorkspaceSwitch(id);
+            else location.assign("/demo?workspace=" + encodeURIComponent(id));
+          }}
+        />
+      )}
       {view === "collections" &&
         active &&
         (mode === "reading" || selection.trim()) &&
@@ -2415,7 +2524,9 @@ export default function WorkspaceApp({
             )}
           </SelectionToolbar>
         )}
-      {view === "collections" && active && <ChatLauncher ctx={ctx} />}
+      {view === "collections" && active && !(right && inspector === "ai") && (
+        <ChatLauncher ctx={ctx} />
+      )}
       {view === "collections" && active && !dialog && (
         <TextContextMenu
           key={"text-context:" + active.id + ":" + mode}
@@ -2472,7 +2583,7 @@ export default function WorkspaceApp({
           onClose={() => setTour(false)}
         />
       )}
-      {dialog && (
+      {dialog && dialog.type !== "workspaces" && (
         <Dialogs
           key={dialog.type + ":" + (dialog.id ?? dialog.parentId ?? "")}
           ctx={ctx}

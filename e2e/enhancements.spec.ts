@@ -167,19 +167,19 @@ test("selection creates a grouped card and a stable link without losing Markdown
   await expect(editor).not.toContainText("#note:");
   await expect(editor).toContainText("**Retained emphasis**");
 });
-test("study method previews, calendar periods, and attachment browsing stay within their scopes", async ({
+test("standard collections, calendar periods, and attachment browsing stay within their scopes", async ({
   page,
 }) => {
   await page.goto("/demo?sample=1");
   await page
     .getByRole("button", { name: "Create collection or subject", exact: true })
     .click();
-  await page.locator(".method-choice").click();
+  await expect(
+    page.getByText("How would you like to study?", { exact: true }),
+  ).toHaveCount(0);
   await page
-    .getByRole("button", { name: /Worked examples.*Follow a problem/ })
-    .click();
-  await expect(page.locator(".method-choice")).toContainText("Worked examples");
-  await page.getByLabel("Name", { exact: true }).fill("TEST methods");
+    .getByLabel("Name", { exact: true })
+    .fill("TEST standard collection");
   await page
     .getByRole("button", { name: "Create collection", exact: true })
     .click();
@@ -388,7 +388,7 @@ test("folder attachment previews expose real bytes and ZIP export reports archiv
   ).toContain("TEST-preview.png");
 });
 
-test("application dictionary shortcut preserves editor content and nested Escape closes only the method picker", async ({
+test("application dictionary shortcut preserves editor content and Escape closes collection creation", async ({
   page,
 }) => {
   await page.goto("/demo?sample=1");
@@ -403,11 +403,9 @@ test("application dictionary shortcut preserves editor content and nested Escape
   await page
     .getByRole("button", { name: "Create collection or subject", exact: true })
     .click();
-  await page.locator(".method-choice").click();
-  await expect(page.locator('[role="dialog"]')).toHaveCount(2);
-  await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(1);
-  await expect(page.locator(".method-choice")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("onboarding keeps the invited tools reachable on narrow and short screens", async ({

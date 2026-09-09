@@ -46,7 +46,11 @@ function Inspector({ ctx, panel }: { ctx: AppContext; panel: string }) {
         : true,
   );
   return (
-    <div className="inspector-content">
+    <div
+      className={
+        "inspector-content" + (panel === "ai" ? " inspector-chat" : "")
+      }
+    >
       {panel === "dictionary" && (
         <>
           <div className="inspector-section-title">

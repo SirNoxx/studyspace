@@ -1,330 +1,460 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Sparkles,
-  AlignLeft,
-  TextSearch,
-  HelpCircle,
-  Route,
-  MessageCircle,
+  Plus,
   Send,
   Square,
-  History,
-  Plus,
+  SlidersHorizontal,
+  MessageCircle,
 } from "lucide-react";
 import type { AppContext } from "../WorkspaceApp";
-import { uid, now } from "@/lib/model";
+import { uid, now, type AIRecord } from "@/lib/model";
 import Markdown from "../Markdown";
 import QuizSession from "./QuizSession";
 import { parseQuiz } from "@/lib/quiz";
-import type { AIRecord } from "@/lib/model";
-const actions = [
-  {
-    id: "summarize",
-    label: "Summarize",
-    description: "Bring the key ideas together",
-    icon: AlignLeft,
-  },
-  {
-    id: "rewrite",
-    label: "Explain in more detail",
-    description: "Build a fuller explanation",
-    icon: TextSearch,
-  },
-  {
-    id: "quiz",
-    label: "Test me",
-    description: "Find out what has stayed with you",
-    icon: HelpCircle,
-  },
-  {
-    id: "next",
-    label: "What should I learn next?",
-    description: "Explore the next useful connection",
-    icon: Route,
-  },
-  {
-    id: "clarify",
-    label: "Clarify a passage",
-    description: "Work through it, step by step",
-    icon: MessageCircle,
-  },
-];
+import { actions } from "./chat-actions";
+
+type Scope = "selection" | "note" | "subject";
 export default function AIStudy({ ctx }: { ctx: AppContext }) {
-  const [action, setAction] = useState("summarize"),
-    [scope, setScope] = useState("note"),
-    [question, setQuestion] = useState(""),
-    [output, setOutput] = useState(""),
-    [status, setStatus] = useState(""),
-    [busy, setBusy] = useState(false),
-    [complete, setComplete] = useState(false),
-    [recordId, setRecordId] = useState(""),
-    [quizAnswer, setQuizAnswer] = useState(false);
-  const abort = useRef<AbortController | null>(null);
-  const revision = useRef(0);
+  const [chatId, setChatId] = useState(
+    () => ctx.w.ai.at(-1)?.chatId ?? ctx.w.ai.at(-1)?.id ?? uid(),
+  );
+  const [action, setAction] = useState("clarify"),
+    [scope, setScope] = useState<Scope>("note");
+  const [style, setStyle] = useState("balanced"),
+    [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(false),
+    [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false),
+    [pending, setPending] = useState<{
+      question: string;
+      output: string;
+    } | null>(null);
+  const abort = useRef<AbortController | null>(null),
+    composer = useRef<HTMLTextAreaElement>(null);
+  const scroll = useRef<HTMLDivElement>(null);
+  const records = ctx.w.ai.filter((r) => (r.chatId ?? r.id) === chatId);
+  const chats = [
+    ...new Map(ctx.w.ai.map((r) => [r.chatId ?? r.id, r])).entries(),
+  ].reverse();
+  const started = records.length > 0 || !!question || !!pending;
+  useEffect(() => () => abort.current?.abort(), []);
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [records.length, pending?.output]);
   const run = async () => {
-    if (!ctx.active) {
-      setStatus("Open a note to choose your study context.");
+    const note = ctx.active;
+    if (busy || !question.trim()) return;
+    if (!note) {
+      setStatus("Open a note to choose your chat context.");
       return;
     }
     if (!ctx.w.settings.aiConsent) {
-      setStatus("Enable the selected-context consent below before continuing.");
+      setOptions(true);
+      setStatus("Enable selected-context sharing in Chat options.");
       return;
     }
+    if (scope === "selection" && !ctx.selection) {
+      setStatus("Select a passage or choose Current note in Chat options.");
+      return;
+    }
+    const prompt = question.trim(),
+      selection = ctx.selection,
+      revision = note.revision;
+    const controller = new AbortController();
+    abort.current = controller;
     setBusy(true);
-    setComplete(false);
-    setOutput("");
+    setOptions(false);
     setStatus("");
-    setQuizAnswer(false);
-    revision.current = ctx.active.revision;
-    abort.current = new AbortController();
+    setQuestion("");
+    setPending({ question: prompt, output: "" });
     try {
       const response = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action,
-          noteId: ctx.active.id,
+          noteId: note.id,
           scope,
-          selection: ctx.selection,
-          question,
-          expectedRevision: ctx.active.revision,
-          explicitSensitive:
-            ctx.active.kind === "journal" || ctx.active.kind === "dream",
+          selection,
+          question: prompt,
+          responseStyle: style,
+          expectedRevision: revision,
+          explicitSensitive: note.kind === "journal" || note.kind === "dream",
+          history: records
+            .filter(
+              (r) =>
+                r.noteId === note.id &&
+                r.scope === scope &&
+                (scope !== "selection" || r.selection === selection),
+            )
+            .slice(-4)
+            .map((r) => ({
+              question: (r.question ?? r.action).slice(0, 4000),
+              answer: r.output.slice(0, 6000),
+            })),
         }),
-        signal: abort.current.signal,
+        signal: controller.signal,
       });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error);
-      }
-      const reader = response.body!.getReader(),
+      if (!response.ok) throw new Error((await response.json()).error);
+      if (!response.body)
+        throw new Error("The response was empty. Please retry.");
+      const reader = response.body.getReader(),
         decoder = new TextDecoder();
-      let text = "",
-        buffer = "",
-        completed = false,
+      let buffer = "",
+        output = "",
+        complete = false,
         evidence: AIRecord["evidence"] = [];
+      const consume = (line: string) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line);
+        if (event.type === "error")
+          throw new Error(
+            event.error ?? "The response was interrupted. Please retry.",
+          );
+        output = event.text ?? output;
+        if (event.type === "complete") {
+          complete = true;
+          evidence = event.evidence;
+        }
+        setPending({
+          question: prompt,
+          output: action === "quiz" ? "Preparing your questions…" : output,
+        });
+      };
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line) continue;
-          const event = JSON.parse(line);
-          text = event.text;
-          setOutput(text);
-          if (event.type === "complete") {
-            completed = true;
-            evidence = event.evidence;
-          }
-        }
+        lines.forEach(consume);
       }
-      if (!completed)
+      consume(buffer + decoder.decode());
+      if (!complete)
         throw new Error(
-          "The response was interrupted. Partial output cannot be applied.",
+          "The response was interrupted. Retry your message; partial output was not saved.",
         );
-      const id = uid();
-      ctx.mutate((w) =>
-        w.ai.push({
-          id,
-          noteId: ctx.active!.id,
-          revision: revision.current,
-          action,
-          output: text,
-          createdAt: now(),
-          selection: scope === "selection" ? ctx.selection : undefined,
-          quiz: action === "quiz" ? parseQuiz(text) : undefined,
-          evidence,
-        }),
-      );
-      setRecordId(id);
-      setComplete(true);
-      setStatus("Complete · review the response before applying it.");
+      if (controller.signal.aborted) return;
+      const record: AIRecord = {
+        id: uid(),
+        chatId,
+        noteId: note.id,
+        revision,
+        action,
+        output,
+        question: prompt,
+        scope,
+        responseStyle: style,
+        createdAt: now(),
+        evidence,
+        selection: scope === "selection" ? selection : undefined,
+        quiz: action === "quiz" ? parseQuiz(output) : undefined,
+      };
+      ctx.mutate((w) => {
+        w.ai.push(record);
+      });
+      setPending(null);
     } catch (error) {
       setStatus(
         (error as Error).name === "AbortError"
-          ? "Cancelled. Partial text was not applied."
+          ? "Response stopped. Your message is ready to retry."
           : (error as Error).message,
       );
+      setQuestion(prompt);
+      setPending(null);
     } finally {
       setBusy(false);
+      abort.current = null;
+      composer.current?.focus();
     }
   };
   return (
-    <>
-      <div className="inspector-section-title">
-        <h2>
-          <Sparkles size={17} /> Study guide
-        </h2>
-      </div>
-      <p className="panel-description">
-        A thoughtful companion to your own thinking.
-      </p>
-      <label className="field">
-        <span>Use only</span>
-        <select value={scope} onChange={(e) => setScope(e.target.value)}>
-          <option value="selection" disabled={!ctx.selection}>
-            Selected passage
-          </option>
-          <option value="note">Current note</option>
-          <option value="subject">Current subject · journals excluded</option>
-        </select>
-      </label>
-      <div className="ai-context">
-        <span className="tiny-dot" />
-        {ctx.active?.title ?? "No note selected"}
-        {scope === "selection" && (
-          <small>{ctx.selection.length} selected characters</small>
-        )}
-      </div>
-      <div className="ai-actions">
-        {actions.map((a) => (
-          <button
-            key={a.id}
-            className={action === a.id ? "selected" : ""}
-            onClick={() => setAction(a.id)}
-          >
-            <a.icon size={17} />
-            <span>
-              <strong>{a.label}</strong>
-              <small>{a.description}</small>
-            </span>
-          </button>
-        ))}
-      </div>
-      <textarea
-        rows={3}
-        aria-label="Study guide instructions"
-        placeholder="A question, a little context, or a preferred level of detail…"
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-      />
-      <label className="checkbox-field">
-        <input
-          type="checkbox"
-          checked={ctx.w.settings.aiConsent}
-          onChange={(e) =>
-            ctx.mutate((w) => {
-              w.settings.aiConsent = e.target.checked;
-            })
-          }
-        />
-        <span>
-          Allow sending this selected context to the configured AI provider.
-        </span>
-      </label>
-      <button
-        className="primary full"
-        disabled={busy || !ctx.active}
-        onClick={() => void run()}
-      >
-        <Sparkles size={15} /> {busy ? "Thinking…" : "Start studying"}
-      </button>
-      {busy && (
+    <section className="ai-chat" aria-label="AI Chat">
+      <header className="chat-header">
+        <strong>
+          <MessageCircle size={16} /> AI Chat
+        </strong>
         <button
-          className="secondary full"
-          onClick={() => abort.current?.abort()}
+          className="icon-button"
+          aria-label="New chat"
+          title="New chat"
+          disabled={busy}
+          onClick={() => {
+            setChatId(uid());
+            setQuestion("");
+            setPending(null);
+            setStatus("");
+            composer.current?.focus();
+          }}
         >
-          <Square size={13} /> Cancel
+          <Plus size={17} />
         </button>
+        <button
+          className="icon-button"
+          aria-label="Chat options"
+          title="Chat options"
+          aria-expanded={options}
+          onClick={() => setOptions(!options)}
+        >
+          <SlidersHorizontal size={16} />
+        </button>
+      </header>
+      {chats.length > 0 && (
+        <select
+          aria-label="Chat history"
+          value={records.length ? chatId : ""}
+          disabled={busy}
+          onChange={(e) => {
+            setChatId(e.target.value);
+            setQuestion("");
+            setPending(null);
+            setStatus("");
+          }}
+        >
+          <option value="" disabled>
+            New conversation
+          </option>
+          {chats.map(([id, r]) => (
+            <option key={id} value={id}>
+              {(r.question ?? r.action).slice(0, 65)}
+            </option>
+          ))}
+        </select>
       )}
-      <p className="form-status" role="status">
-        {status}
-      </p>
-      {ctx.demo && (
-        <p className="quiet-callout">
-          AI requires a signed-in workspace and server provider configuration.
-          Demo content is never sent automatically.
-        </p>
-      )}
-      {output && (
-        <div className="ai-response">
-          {action === "quiz" ? (
-            complete ? (
-              <QuizSession key={recordId} ctx={ctx} recordId={recordId} />
-            ) : (
-              <p>Preparing your questions…</p>
-            )
-          ) : (
-            <Markdown
-              body={output}
-              onAIReference={(id) =>
-                ctx.setDialog({
-                  type: "ai-evidence",
-                  id: recordId,
-                  reference: id,
+      {options && (
+        <div className="chat-options">
+          <label className="field">
+            <span>Context</span>
+            <select
+              aria-label="Chat context"
+              disabled={busy}
+              value={scope}
+              onChange={(e) => setScope(e.target.value as Scope)}
+            >
+              <option value="note">Current note</option>
+              <option value="selection" disabled={!ctx.selection}>
+                Selected passage
+              </option>
+              <option value="subject">
+                Current subject · journals excluded
+              </option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Study action</span>
+            <select
+              aria-label="Chat action"
+              disabled={busy}
+              value={action}
+              onChange={(e) => setAction(e.target.value)}
+            >
+              {actions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Response style</span>
+            <select
+              aria-label="Response style"
+              disabled={busy}
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+            >
+              <option value="balanced">Balanced</option>
+              <option value="concise">Concise</option>
+              <option value="detailed">Detailed</option>
+              <option value="socratic">Guide me with questions</option>
+            </select>
+          </label>
+          <label className="checkbox-field">
+            <input
+              type="checkbox"
+              checked={ctx.w.settings.aiConsent}
+              onChange={(e) =>
+                ctx.mutate((w) => {
+                  w.settings.aiConsent = e.target.checked;
                 })
               }
             />
-          )}
-          {!busy && complete && (
-            <div className="stack-actions">
-              <button
-                className="secondary"
-                onClick={() =>
-                  ctx.setDialog({
-                    type: "ai-preview",
-                    id: recordId,
-                    output,
-                    revision: revision.current,
-                    noteId: ctx.w.ai.find((r) => r.id === recordId)?.noteId,
-                    selection: ctx.w.ai.find((r) => r.id === recordId)
-                      ?.selection,
-                  })
-                }
-              >
-                Review & save response
-              </button>
-              <button
-                className="text-button"
-                onClick={() =>
-                  ctx.setDialog({
-                    type: "review-card",
-                    value: question || "Recall the main idea",
-                    answer: output,
-                  })
-                }
-              >
-                Create an editable review card
-              </button>
-            </div>
-          )}
+            <span>
+              Allow sending this selected context to the configured AI provider.
+            </span>
+          </label>
         </div>
       )}
-      <div className="panel-divider" />
-      <h3>Previous sessions</h3>
-      {ctx.w.ai
-        .filter((r) => r.noteId === ctx.active?.id)
-        .slice(-8)
-        .reverse()
-        .map((r) => (
-          <div className="history-row" key={r.id}>
-            <button
-              onClick={() => {
-                setOutput(r.output);
-                setComplete(true);
-                setAction(r.action);
-                setRecordId(r.id);
-                revision.current = r.revision;
-              }}
-            >
-              <History size={13} />
-              {r.action} · {new Date(r.createdAt).toLocaleDateString()}
-            </button>
-            <button
-              aria-label="Delete AI session"
-              onClick={() =>
-                ctx.mutate((w) => {
-                  w.ai = w.ai.filter((x) => x.id !== r.id);
-                })
-              }
-            >
-              ×
-            </button>
+      <p className="chat-context">
+        {scope === "selection"
+          ? "Selected passage"
+          : scope === "subject"
+            ? "Current subject"
+            : (ctx.active?.title ?? "Open a note to begin")}{" "}
+        · {style}
+      </p>
+      <div
+        className="chat-conversation"
+        role="log"
+        aria-label="Conversation"
+        ref={scroll}
+      >
+        {!started && (
+          <div className="chat-starters">
+            <h2>What would you like to explore?</h2>
+            <p>Start with your notes, or ask a question.</p>
+            {actions.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => {
+                  setAction(a.id);
+                  setQuestion(a.label);
+                  composer.current?.focus();
+                }}
+              >
+                <a.icon size={16} />
+                <span>{a.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {records.map((r) => (
+          <div className="chat-turn" key={r.id}>
+            <div className="chat-message user">
+              <small>You</small>
+              <p>{r.question ?? r.action}</p>
+            </div>
+            <div className="chat-message assistant">
+              <small>Studyspace</small>
+              {r.quiz ? (
+                <QuizSession ctx={ctx} recordId={r.id} />
+              ) : (
+                <Markdown
+                  body={r.output}
+                  onAIReference={(id) =>
+                    ctx.setDialog({
+                      type: "ai-evidence",
+                      id: r.id,
+                      reference: id,
+                    })
+                  }
+                />
+              )}
+              <div className="chat-response-actions">
+                <button
+                  className="text-button"
+                  onClick={() =>
+                    ctx.setDialog({
+                      type: "ai-preview",
+                      id: r.id,
+                      output: r.output,
+                      revision: r.revision,
+                      noteId: r.noteId,
+                      selection: r.selection,
+                    })
+                  }
+                >
+                  Review & save response
+                </button>
+                <button
+                  className="text-button"
+                  onClick={() =>
+                    ctx.setDialog({
+                      type: "review-card",
+                      value: r.question ?? "Recall the main idea",
+                      answer: r.output,
+                    })
+                  }
+                >
+                  Create study card
+                </button>
+              </div>
+            </div>
           </div>
         ))}
-    </>
+        {pending && (
+          <div className="chat-turn">
+            <div className="chat-message user">
+              <small>You</small>
+              <p>{pending.question}</p>
+            </div>
+            <div className="chat-message assistant">
+              <small>Studyspace</small>
+              <Markdown body={pending.output || "Thinking…"} />
+            </div>
+          </div>
+        )}
+      </div>
+      <form
+        className="chat-composer"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void run();
+        }}
+      >
+        {status && (
+          <p className="form-status" role="status">
+            {status}
+          </p>
+        )}
+        {!ctx.w.settings.aiConsent && !options && (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setOptions(true)}
+          >
+            Set up context sharing
+          </button>
+        )}
+        <textarea
+          ref={composer}
+          aria-label="Chat message"
+          rows={3}
+          maxLength={4000}
+          placeholder="Ask about your notes…"
+          value={question}
+          disabled={busy}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (
+              e.key === "Enter" &&
+              !e.shiftKey &&
+              !e.nativeEvent.isComposing
+            ) {
+              e.preventDefault();
+              void run();
+            }
+          }}
+        />
+        <div className="chat-send-row">
+          <small>Enter to send · Shift+Enter for a new line</small>
+          {busy ? (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => abort.current?.abort()}
+              aria-label="Stop response"
+            >
+              <Square size={15} />
+            </button>
+          ) : (
+            <button
+              className="primary"
+              disabled={!ctx.active || !question.trim()}
+              aria-label="Send message"
+            >
+              <Send size={15} />
+            </button>
+          )}
+        </div>
+        {ctx.demo && (
+          <small className="chat-availability">
+            AI replies require a connected cloud workspace and configured
+            provider.
+          </small>
+        )}
+      </form>
+    </section>
   );
 }

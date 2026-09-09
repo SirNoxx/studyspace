@@ -5,6 +5,7 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
   await page.goto("/demo?sample=1");
   await expect(page.locator(".save-state")).toContainText("Saved");
   await page.getByRole("tab", { name: "AI Study Guide", exact: true }).click();
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
   await page
     .getByLabel(
       "Allow sending this selected context to the configured AI provider.",
@@ -33,12 +34,11 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
       body: JSON.stringify({ type: "complete", text, evidence: [] }) + "\n",
     });
   });
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
   await page
     .getByRole("button", { name: "Explain in more detail", exact: false })
     .click();
-  await page
-    .getByRole("button", { name: "Start studying", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
   await page.getByRole("button", { name: "Review & save response" }).click();
   await expect(page.getByRole("dialog")).toContainText("TEST FIXTURE");
   await page.screenshot({
@@ -46,10 +46,10 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
     animations: "disabled",
   });
   await page.getByRole("button", { name: "Reject", exact: true }).click();
-  await page.getByRole("button", { name: "Test me", exact: false }).click();
-  await page
-    .getByRole("button", { name: "Start studying", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
+  await page.getByLabel("Chat action").selectOption("quiz");
+  await page.getByLabel("Chat message", { exact: true }).fill("Test me");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".quiz-session")).toBeVisible();
   await expect(
     page.getByText("A structured request to an external capability.", {
@@ -71,10 +71,6 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
   await expect(page.locator(".save-state")).toContainText("Saved");
   await page.reload();
   await page.getByRole("tab", { name: "AI Study Guide", exact: true }).click();
-  await page
-    .getByRole("button", { name: /quiz ·/ })
-    .first()
-    .click();
   await page.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(page.getByLabel("Your answer", { exact: true })).toHaveValue(
     "My private test response",

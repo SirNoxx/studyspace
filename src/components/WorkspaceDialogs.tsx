@@ -59,7 +59,6 @@ import {
 } from "@/lib/transfer";
 import { localDB } from "@/lib/store";
 import {
-  MethodPicker,
   GroupSelect,
   AttachmentsPanel,
   HyperlinkDialog,
@@ -112,11 +111,6 @@ export default function Dialogs({
       previousPublication?.category ?? "General research",
     ),
     [tags, setTags] = useState(previousPublication?.topics.join(", ") ?? ""),
-    [approach, setApproach] = useState(
-      previousPublication?.studyMethod ??
-        w.containers.find((c) => c.id === dialog.id)?.approach ??
-        "mixed",
-    ),
     [dictionary, setDictionary] = useState(true),
     [description, setDescription] = useState(""),
     [aliases, setAliases] = useState(
@@ -254,12 +248,16 @@ export default function Dialogs({
         },
         key: "",
       },
-      {
-        title: "New collection or subject",
-        detail: "Make room for a new topic",
-        action: () => ctx.setDialog({ type: "container" }),
-        key: "",
-      },
+      ...(ctx.focus
+        ? []
+        : [
+            {
+              title: "New collection or subject",
+              detail: "Make room for a new topic",
+              action: () => ctx.setDialog({ type: "container" }),
+              key: "",
+            },
+          ]),
       {
         title: "Look up a definition",
         detail: "Your personal dictionary",
@@ -477,7 +475,7 @@ export default function Dialogs({
         title={dialog.kind === "folder" ? "New folder" : "A new space to learn"}
         description={
           dialog.kind === "folder"
-            ? "Organize your notes without adding a study profile."
+            ? "Organize your notes into folders."
             : "Start with a name. Make the rest your own."
         }
         onClose={onClose}
@@ -500,7 +498,6 @@ export default function Dialogs({
                           : "collection",
                     color,
                     icon,
-                    approach,
                     dictionary,
                     description,
                   }),
@@ -591,9 +588,6 @@ export default function Dialogs({
           </div>
           {dialog.kind !== "folder" && (
             <>
-              <Field label="How would you like to study?">
-                <MethodPicker value={approach} onChange={setApproach} />
-              </Field>
               <label className="checkbox-field">
                 <input
                   type="checkbox"
@@ -878,35 +872,24 @@ export default function Dialogs({
         </div>
       </Modal>
     );
-  if (dialog.type === "rename" || dialog.type === "tags")
+  if (dialog.type === "tags")
     return (
-      <Modal
-        title={dialog.type === "tags" ? "Edit tags" : "Rename"}
-        onClose={onClose}
-      >
+      <Modal title="Edit tags" onClose={onClose}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             mutate((s) => {
               const n = s.notes.find((n) => n.id === dialog.id);
-              if (dialog.type === "tags" && n)
+              if (n)
                 n.tags = name
                   .split(",")
                   .map((s) => s.trim().replace(/^#/, ""))
                   .filter(Boolean);
-              else if (n)
-                saveNote(s, n.id, n.revision, { title: name.trim() }, "Rename");
-              else {
-                const c = s.containers.find((c) => c.id === dialog.id);
-                if (c) c.title = name.trim();
-              }
             });
             onClose();
           }}
         >
-          <Field
-            label={dialog.type === "tags" ? "Tags · comma separated" : "Name"}
-          >
+          <Field label="Tags · comma separated">
             <input
               required
               autoFocus
@@ -2096,9 +2079,6 @@ export default function Dialogs({
                 <input value={tags} onChange={(e) => setTags(e.target.value)} />
               </Field>
             </div>
-            <Field label="Study method">
-              <MethodPicker value={approach} onChange={setApproach} />
-            </Field>
             <p className="muted">
               Author: {w.settings.displayName}. Change your public attribution
               in Settings → Profile.
@@ -2148,7 +2128,7 @@ export default function Dialogs({
                           "Research collection",
                         description,
                         category,
-                        studyMethod: approach,
+                        studyMethod: "mixed",
                         topics: tags
                           .split(",")
                           .map((t) => t.trim())
@@ -2203,7 +2183,7 @@ export default function Dialogs({
             <div className="publication-reader-preview">
               <h2>{snapshot.title}</h2>
               <p>
-                {snapshot.author} · {snapshot.category} · {snapshot.studyMethod}
+                {snapshot.author} · {snapshot.category}
               </p>
               <p>
                 {publicationCounts(snapshot).folders} folders ·{" "}

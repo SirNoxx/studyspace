@@ -111,68 +111,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.method-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(235px, 1fr));
-  gap: 15px;
-}
-.method-option,
-.method-choice {
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--panel-raised);
-  text-align: left;
-  padding: 12px;
-}
-.method-option {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.method-option strong {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.method-option p {
-  font-size: 13px;
-  margin: 0;
-  line-height: 1.6;
-}
-.method-option small,
-.method-choice small {
-  color: var(--muted);
-  line-height: 1.5;
-}
-.method-option.selected,
 .icon-picker [aria-pressed="true"],
 .link-picker .selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
   background: var(--accent-soft);
-}
-.method-art {
-  display: block;
-  width: 100%;
-  height: 95px;
-}
-.method-choice {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  width: 100%;
-  color: var(--text);
-}
-.method-choice .method-art {
-  width: 105px;
-  height: 65px;
-  flex-shrink: 0;
-}
-.method-choice span {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
 }
 .icon-picker {
   display: grid;
@@ -733,9 +676,6 @@
   }
   .tree-create {
     opacity: 1;
-  }
-  .method-grid {
-    grid-template-columns: 1fr;
   }
   .card-collections .form-row {
     grid-template-columns: 1fr;

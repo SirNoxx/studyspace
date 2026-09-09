@@ -140,7 +140,20 @@ export function Menu({
     <Dropdown.Root>
       <Dropdown.Trigger asChild>{trigger}</Dropdown.Trigger>
       <Dropdown.Portal>
-        <Dropdown.Content className="context-menu" sideOffset={5} align="start">
+        <Dropdown.Content
+          className="context-menu"
+          sideOffset={5}
+          align="start"
+          onCloseAutoFocus={(e) => {
+            const rename =
+              document.querySelector<HTMLInputElement>(".inline-rename");
+            if (rename) {
+              e.preventDefault();
+              rename.focus();
+              rename.select();
+            }
+          }}
+        >
           {items.map((item, i) =>
             item === "separator" ? (
               <Dropdown.Separator className="menu-separator" key={i} />
