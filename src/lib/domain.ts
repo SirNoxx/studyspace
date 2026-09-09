@@ -1,3 +1,4 @@
+import { formatJournalDate } from "./journal-date";
 import { diffLines } from "diff";
 import { current, isDraft } from "immer";
 import {
@@ -307,7 +308,10 @@ export function captureJournal(
   }
   return createNote(w, parent, {
     kind,
-    title: kind === "journal" ? date : "Dream · " + date,
+    title:
+      kind === "journal"
+        ? formatJournalDate(date)
+        : "Dream · " + formatJournalDate(date),
     journalDate: date,
     timezone: w.settings.timezone,
     body:

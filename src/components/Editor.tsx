@@ -368,6 +368,7 @@ export default function Editor({
       focus: () => editor.focus(),
     };
     return () => {
+      handle.current = null;
       editor.destroy();
       view.current = null;
     };

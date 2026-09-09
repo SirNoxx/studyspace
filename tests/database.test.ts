@@ -32,6 +32,7 @@ beforeAll(async () => {
     "202609080007_indexed_search.sql",
     "202609080008_storage_lifecycle.sql",
     "202609080009_discover_browsing.sql",
+    "202609090010_journal_templates.sql",
   ])
     await db.exec(
       await readFile(
@@ -62,6 +63,44 @@ async function asUser(id: string | null, fn: () => Promise<void>) {
   }
 }
 describe("PostgreSQL migrations, transactions and direct RLS", () => {
+  it("exposes only visible journal templates and reserves removal for their owner", async () => {
+    const visible = uid(),
+      hidden = uid();
+    await db.query(
+      "insert into journal_templates(id,owner_id,title,body,kind,author,hidden) values($1,$3,'Reflection','## Prompts','journal','Author',false),($2,$3,'Hidden','Private moderation','journal','Author',true)",
+      [visible, hidden, A],
+    );
+    await asUser(null, async () => {
+      expect(
+        (await db.query("select title from journal_templates")).rows,
+      ).toEqual([{ title: "Reflection" }]);
+      await expect(
+        db.query(
+          "insert into journal_templates(owner_id,title,body,kind,author) values($1,'Bypass','Body','journal','Fake')",
+          [B],
+        ),
+      ).rejects.toThrow("permission denied");
+    });
+    await asUser(B, async () => {
+      await db.query("delete from journal_templates where id=$1", [visible]);
+      expect((await db.query("select id from journal_templates")).rows).toEqual(
+        [{ id: visible }],
+      );
+    });
+    await asUser(A, async () => {
+      expect(
+        (await db.query("select id from journal_templates")).rows,
+      ).toHaveLength(2);
+      await db.query("delete from journal_templates where id=$1", [visible]);
+    });
+    expect(
+      (
+        await db.query("select id from journal_templates where id=$1", [
+          visible,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+  });
   it("commits a workspace and rejects stale concurrency and duplicate General", async () => {
     const w = emptyWorkspace();
     createNote(w, undefined, {

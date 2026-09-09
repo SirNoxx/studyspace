@@ -1,4 +1,5 @@
 "use client";
+import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
 import {
   useCallback,
   useEffect,
@@ -150,6 +151,8 @@ export interface AppContext {
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
   openChat: () => void;
+  openJournalNote: (id: string) => void;
+  setSelection: (text: string) => void;
   toast: (message: string) => void;
   recoverDraft: (draft?: Workspace) => Promise<void>;
   signOut: () => Promise<void>;
@@ -700,7 +703,7 @@ export default function WorkspaceApp({
     setLeft(true);
     setTreeQuery("");
     setExpanded((old) => [...new Set([...old, ...path.map((c) => c.id)])]);
-    setRenaming({ id, value: container?.title ?? note!.title });
+    setRenaming({ id, value: container?.title ?? noteDisplayTitle(note!) });
   };
   const finishRename = () => {
     if (!renaming) return;
@@ -876,6 +879,14 @@ export default function WorkspaceApp({
       </div>
     );
   const ctx: AppContext = {
+    openJournalNote: (id) => {
+      flushRender();
+      setActiveId(id);
+      setTabs((old) => [...new Set([...old, id])]);
+      setSelection("");
+      setViewState("journal");
+    },
+    setSelection,
     openChat: () => {
       setZen(false);
       setRight(true);
@@ -1329,7 +1340,9 @@ export default function WorkspaceApp({
             {renaming?.id === n.id ? (
               renameField(n.id, "File name")
             ) : (
-              <span className="tree-title">{n.title || "Untitled"}</span>
+              <span className="tree-title">
+                {noteDisplayTitle(n) || "Untitled"}
+              </span>
             )}
             {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
           </div>
@@ -1500,20 +1513,6 @@ export default function WorkspaceApp({
               <span className="ribbon-label">Settings</span>
             )}
           </IconButton>
-          {!right && (
-            <IconButton
-              label="Open inspector"
-              onClick={() => {
-                setZen(false);
-                setRight(true);
-              }}
-            >
-              <PanelRightOpen size={19} />
-              {!w.settings.ribbonCompact && (
-                <span className="ribbon-label">Notes & Sources</span>
-              )}
-            </IconButton>
-          )}
           <button
             className="avatar"
             aria-label="Account settings"
@@ -1803,7 +1802,7 @@ export default function WorkspaceApp({
                     title={
                       (focus && rootOf(w, n.containerId)?.id !== focus
                         ? rootOf(w, n.containerId)?.title + " · "
-                        : "") + n.title
+                        : "") + noteDisplayTitle(n)
                     }
                   >
                     {pinned.includes(id) ? (
@@ -1811,10 +1810,10 @@ export default function WorkspaceApp({
                     ) : (
                       <FileText size={13} />
                     )}
-                    <span>{n.title}</span>
+                    <span>{noteDisplayTitle(n)}</span>
                   </button>
                   <IconButton
-                    label={"Close " + n.title}
+                    label={"Close " + noteDisplayTitle(n)}
                     onClick={() => closeTab(id)}
                   >
                     <X size={12} />
@@ -1833,6 +1832,22 @@ export default function WorkspaceApp({
               onClick={() => setZen(!zen)}
             >
               {zen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </IconButton>
+            <IconButton
+              label={!zen && right ? "Close inspector" : "Open inspector"}
+              aria-expanded={!zen && right}
+              onClick={() => {
+                if (zen || !right) {
+                  setZen(false);
+                  setRight(true);
+                } else setRight(false);
+              }}
+            >
+              {!zen && right ? (
+                <PanelRightClose size={17} />
+              ) : (
+                <PanelRightOpen size={17} />
+              )}
             </IconButton>
           </div>
         </div>
@@ -1880,7 +1895,9 @@ export default function WorkspaceApp({
                     <ChevronRight size={12} />
                   </span>
                 ))}
-                <span title={active.title}>{active.title}</span>
+                <span title={noteDisplayTitle(active)}>
+                  {noteDisplayTitle(active)}
+                </span>
               </div>
               <div className="inline-actions">
                 <span className="private-label">
@@ -1986,7 +2003,7 @@ export default function WorkspaceApp({
                   ref={titleInput}
                   className="note-title"
                   aria-label="Note title"
-                  value={active.title}
+                  value={noteDisplayTitle(active)}
                   readOnly={mode === "reading"}
                   onFocus={(e) => {
                     if (e.target.value === "Untitled") e.target.select();
@@ -2023,11 +2040,16 @@ export default function WorkspaceApp({
                 <div className="note-properties">
                   <span>
                     <CalendarDays size={12} />
-                    {new Date(active.createdAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
+                    {active.journalDate
+                      ? formatJournalDate(active.journalDate)
+                      : new Date(active.createdAt).toLocaleDateString(
+                          undefined,
+                          {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          },
+                        )}
                   </span>
                   {active.tags.map((tag) => (
                     <button
@@ -2372,12 +2394,6 @@ export default function WorkspaceApp({
           <aside className="inspector" aria-label="Notes and sources">
             <header>
               <span>Notes & Sources</span>
-              <IconButton
-                label="Close inspector"
-                onClick={() => setRight(false)}
-              >
-                <PanelRightClose size={16} />
-              </IconButton>
             </header>
             <div
               className={

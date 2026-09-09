@@ -252,6 +252,7 @@ export interface AIRecord {
   evidence?: { id: string; text: string; title?: string; locator?: string }[];
 }
 export interface Settings {
+  journalTemplates?: JournalTemplate[];
   workspaceName?: string;
   ribbonCompact?: boolean;
   toolsCompact?: boolean;
@@ -280,6 +281,15 @@ export interface Settings {
   dreamTemplate: string;
   displayName: string;
   bio: string;
+}
+export interface JournalTemplate {
+  id: ID;
+  title: string;
+  body: string;
+  kind: "journal" | "dream";
+  publicId?: ID;
+  publishedId?: ID;
+  author?: string;
 }
 export interface Workspace {
   schemaVersion: 1;

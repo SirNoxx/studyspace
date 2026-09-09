@@ -1,4 +1,5 @@
 "use client";
+import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
 import { instantiateSnapshot } from "@/lib/study-copy";
 import { localDB } from "@/lib/store";
 import { useEffect, useState } from "react";
@@ -73,6 +74,7 @@ import {
   JournalIcon,
 } from "./WorkspaceEnhancements";
 import StudyGroups from "./StudyGroups";
+import JournalEditor from "./JournalEditor";
 import {
   categories,
   publicationCounts,
@@ -93,6 +95,7 @@ export default function WorkspaceViews({
   const [sort, setSort] = useState("alpha"),
     [date, setDate] = useState(localDate(w.settings.timezone)),
     [dream, setDream] = useState(false),
+    [journalEntryId, setJournalEntryId] = useState<string | null>(null),
     [revealed, setRevealed] = useState(false),
     [lastGrade, setLastGrade] = useState<string | null>(null),
     [reviewMode, setReviewMode] = useState("daily"),
@@ -227,14 +230,14 @@ export default function WorkspaceViews({
       )}
     </header>
   );
-  const noteRows = (notes: typeof w.notes) => (
+  const noteRows = (notes: typeof w.notes, onOpen = openNote) => (
     <div className="note-results">
       {notes.map((n) => (
         <button
           key={n.id}
           onClick={() =>
             w.notes.some((x) => x.id === n.id)
-              ? openNote(n.id)
+              ? onOpen(n.id)
               : (location.href = "/w/note/" + n.id)
           }
         >
@@ -242,7 +245,7 @@ export default function WorkspaceViews({
             <FileText size={19} />
           </span>
           <span>
-            <strong>{n.title}</strong>
+            <strong>{noteDisplayTitle(n)}</strong>
             <small>
               {ancestry(w, n.containerId)
                 .map((c) => c.title)
@@ -534,6 +537,15 @@ export default function WorkspaceViews({
     const entries = w.notes
       .filter((n) => !n.trashed && n.kind === (isDream ? "dream" : "journal"))
       .sort((a, b) => (b.journalDate ?? "").localeCompare(a.journalDate ?? ""));
+    const selectedEntry = entries.find(
+      (n) => n.id === journalEntryId && n.journalDate === date,
+    );
+    const openEntry = (id: string) => {
+      const entry = w.notes.find((n) => n.id === id);
+      if (entry?.journalDate) setDate(entry.journalDate);
+      setJournalEntryId(id);
+      ctx.openJournalNote(id);
+    };
     return (
       <div className="view-scroll">
         <div className="workspace-view journal-view">
@@ -571,13 +583,7 @@ export default function WorkspaceViews({
                   ? "TODAY"
                   : "YOUR CHOSEN DAY"}
               </span>
-              <h2>
-                {new Date(date + "T12:00:00").toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </h2>
+              <h2>{formatJournalDate(date)}</h2>
               <small>{w.settings.timezone} · always private by default</small>
             </div>
             <input
@@ -587,58 +593,78 @@ export default function WorkspaceViews({
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
-          <div className="journal-start">
-            <span className="journal-illustration">
-              {isDream ? (
-                <Moon size={39} strokeWidth={1} />
-              ) : (
-                <Feather size={39} strokeWidth={1} />
-              )}
-            </span>
-            <h2>
-              {isDream ? "What stayed with you?" : "What’s worth remembering?"}
-            </h2>
-            <p>
-              {isDream
-                ? "A scene, a feeling, or a detail. Begin anywhere."
-                : "The small things count, too."}
-            </p>
-            <button
-              className="primary"
-              onClick={() => {
-                let id = "";
-                mutate((s) => {
-                  id = captureJournal(
-                    s,
-                    isDream ? "dream" : "journal",
-                    date,
-                  ).id;
-                });
-                openNote(id);
-              }}
-            >
-              <Plus size={16} />
-              {isDream ? "Record a dream" : "Open this day’s entry"}
-            </button>
-            {!isDream && (
+          {!selectedEntry && (
+            <div className="journal-start">
+              <span className="journal-illustration">
+                {isDream ? (
+                  <Moon size={39} strokeWidth={1} />
+                ) : (
+                  <Feather size={39} strokeWidth={1} />
+                )}
+              </span>
+              <h2>
+                {isDream
+                  ? "What stayed with you?"
+                  : "What’s worth remembering?"}
+              </h2>
+              <p>
+                {isDream
+                  ? "A scene, a feeling, or a detail. Begin anywhere."
+                  : "The small things count, too."}
+              </p>
               <button
-                className="text-button"
+                className="primary"
                 onClick={() => {
                   let id = "";
                   mutate((s) => {
-                    id = captureJournal(s, "journal", date, true).id;
+                    id = captureJournal(
+                      s,
+                      isDream ? "dream" : "journal",
+                      date,
+                    ).id;
                   });
-                  openNote(id);
+                  openEntry(id);
                 }}
               >
-                Add a separate entry
+                <Plus size={16} />
+                {isDream ? "Record a dream" : "Open this day’s entry"}
               </button>
-            )}
-          </div>
-          <h3 className="section-label">Entries for {date}</h3>
-          {noteRows(entries.filter((n) => n.journalDate === date))}
+              {!isDream && (
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    let id = "";
+                    mutate((s) => {
+                      id = captureJournal(s, "journal", date, true).id;
+                    });
+                    openEntry(id);
+                  }}
+                >
+                  Add a separate entry
+                </button>
+              )}
+            </div>
+          )}
+          {selectedEntry && (
+            <JournalEditor
+              key={selectedEntry.id}
+              ctx={ctx}
+              note={selectedEntry}
+              onClose={() => setJournalEntryId(null)}
+            />
+          )}
+          <h3 className="section-label">
+            Entries for {formatJournalDate(date)}
+          </h3>
+          {noteRows(
+            entries.filter((n) => n.journalDate === date),
+            openEntry,
+          )}
           <h3 className="section-label">Recent entries</h3>
-          {noteRows(entries.filter((n) => n.journalDate !== date))}
+          {noteRows(
+            entries.filter((n) => n.journalDate !== date),
+            openEntry,
+          )}
           {!entries.length && (
             <p className="muted">
               Your first entry can be as short as a sentence.
@@ -1344,7 +1370,7 @@ export default function WorkspaceViews({
             >
               <Bell size={18} />
               <div>
-                <strong>{n.title}</strong>
+                <strong>{noteDisplayTitle(n)}</strong>
                 <p>{n.body}</p>
                 <a href={n.href ?? "/w/inbox"}>Open</a>
               </div>
@@ -1928,7 +1954,7 @@ export default function WorkspaceViews({
                     .map((n) => (
                       <div className="trash-row" key={n.id}>
                         <FileText size={14} />
-                        <span>{n.title}</span>
+                        <span>{noteDisplayTitle(n)}</span>
                         <button
                           onClick={() =>
                             mutate((s) => {
@@ -2013,7 +2039,9 @@ export default function WorkspaceViews({
                     .map((n) => (
                       <div className="trash-row" key={n.id}>
                         <Archive size={14} />
-                        <span>{n.title}</span>
+                        <span>
+                          {"body" in n ? noteDisplayTitle(n) : n.title}
+                        </span>
                         <button
                           onClick={() =>
                             mutate((s) => {
