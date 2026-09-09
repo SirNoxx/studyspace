@@ -63,7 +63,7 @@ export function undoMerge(w: Workspace, c: StudyCopy) {
 }
 export function mappedReferences(body: string, map: Record<string, string>) {
   return body.replace(
-    /(attachment:|#citation:)([0-9a-f-]{36})/gi,
+    /(attachment:|#citation:|#note:)([0-9a-f-]{36})/gi,
     (all, prefix, id) => (map[id] ? prefix + map[id] : all),
   );
 }

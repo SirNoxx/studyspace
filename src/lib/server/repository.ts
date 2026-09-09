@@ -1,3 +1,4 @@
+import { normalizeWorkspace } from "../enhancements";
 import { adminClient } from "../supabase/server";
 import {
   emptyWorkspace,
@@ -31,7 +32,7 @@ export async function loadWorkspace(owner: string): Promise<Workspace> {
   for (const row of ws.records as { kind: keyof Workspace; data: unknown }[])
     (w[row.kind as keyof Workspace] as unknown[]).push(row.data);
   w.publications = w.publications.filter((p) => p.current);
-  return w;
+  return normalizeWorkspace(w);
 }
 export async function persistWorkspace(
   owner: string,

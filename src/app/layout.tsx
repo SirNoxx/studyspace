@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./enhancements.css";
 import "katex/dist/katex.min.css";
 export const metadata: Metadata = {
   title: "Studyspace — A place for understanding",

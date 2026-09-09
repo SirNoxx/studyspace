@@ -35,6 +35,7 @@ export interface EditorHandle {
   insert: (text: string) => void;
   wrap: (left: string, right: string) => void;
   selection: () => string;
+  range: () => { from: number; to: number };
   focus: () => void;
 }
 export default function Editor({
@@ -124,7 +125,7 @@ export default function Editor({
                     marks.push({
                       from: node.from,
                       to: node.to,
-                      value: Decoration.mark({ class: "cm-quiet-syntax" }),
+                      value: Decoration.replace({}),
                     });
                 }
               },
@@ -287,6 +288,10 @@ export default function Editor({
     view.current = editor;
     templateState.current = editor.state;
     handle.current = {
+      range: () => ({
+        from: editor.state.selection.main.from,
+        to: editor.state.selection.main.to,
+      }),
       insert: (text) => {
         const s = editor.state.selection.main;
         editor.dispatch({

@@ -58,6 +58,15 @@ import {
   downloadBytes,
 } from "@/lib/transfer";
 import { localDB } from "@/lib/store";
+import {
+  MethodPicker,
+  GroupSelect,
+  AttachmentsPanel,
+  HyperlinkDialog,
+} from "./WorkspaceEnhancements";
+import { categories, publicationCounts } from "@/lib/enhancements";
+import AISuggestion from "./study/AISuggestion";
+import AttachmentMedia from "./AttachmentMedia";
 const PdfViewer = dynamic(() => import("./study/PdfViewer"), { ssr: false });
 export default function Dialogs({
   ctx,
@@ -71,6 +80,14 @@ export default function Dialogs({
   const { w, mutate, active } = ctx;
   const existingDefinition = w.definitions.find((d) => d.id === dialog.id),
     existingSource = w.sources.find((s) => s.id === dialog.id);
+  const previousPublication =
+    dialog.type === "publish"
+      ? w.publications.find(
+          (p) =>
+            p.containerId ===
+            (dialog.container ? dialog.id : active?.containerId),
+        )?.current
+      : undefined;
   const [name, setName] = useState(
       String(dialog.value ?? existingDefinition?.term ?? ""),
     ),
@@ -90,7 +107,16 @@ export default function Dialogs({
     ),
     [color, setColor] = useState("#739b8e"),
     [icon, setIcon] = useState("book"),
-    [approach, setApproach] = useState("mixed"),
+    [groupId, setGroupId] = useState(String(dialog.groupId ?? "")),
+    [category, setCategory] = useState(
+      previousPublication?.category ?? "General research",
+    ),
+    [tags, setTags] = useState(previousPublication?.topics.join(", ") ?? ""),
+    [approach, setApproach] = useState(
+      previousPublication?.studyMethod ??
+        w.containers.find((c) => c.id === dialog.id)?.approach ??
+        "mixed",
+    ),
     [dictionary, setDictionary] = useState(true),
     [description, setDescription] = useState(""),
     [aliases, setAliases] = useState(
@@ -406,6 +432,52 @@ export default function Dialogs({
       </Modal>
     );
   }
+  if (dialog.type === "folder-attachments")
+    return <AttachmentsPanel ctx={ctx} id={dialog.id!} onClose={onClose} />;
+  if (dialog.type === "hyperlink")
+    return <HyperlinkDialog ctx={ctx} onClose={onClose} />;
+  if (dialog.type === "attachment") {
+    const asset = w.attachments.find((a) => a.id === dialog.id);
+    return (
+      <Modal
+        title={asset?.filename ?? "Attachment unavailable"}
+        onClose={onClose}
+      >
+        {asset && <AttachmentMedia asset={asset} image demo={ctx.demo} />}
+      </Modal>
+    );
+  }
+  if (dialog.type === "publish-picker")
+    return (
+      <Modal
+        title="Publish to Discover"
+        description="Choose a collection or folder, then review its exact public scope. Your originals stay private."
+        onClose={onClose}
+      >
+        <div className="link-picker">
+          {w.containers
+            .filter((c) => !c.trashed && !c.archived)
+            .map((c) => (
+              <button
+                key={c.id}
+                onClick={() =>
+                  ctx.setDialog({ type: "publish", id: c.id, container: true })
+                }
+              >
+                <SymbolIcon name={c.icon} />
+                <span>
+                  {c.title}
+                  <small>
+                    {ancestry(w, c.id)
+                      .map((c) => c.title)
+                      .join(" / ")}
+                  </small>
+                </span>
+              </button>
+            ))}
+        </div>
+      </Modal>
+    );
   if (dialog.type === "container")
     return (
       <Modal
@@ -507,30 +579,27 @@ export default function Dialogs({
               </div>
             </Field>
             <Field label="Icon">
-              <select value={icon} onChange={(e) => setIcon(e.target.value)}>
+              <div className="icon-picker">
                 {Object.keys(icons).map((i) => (
-                  <option key={i}>{i}</option>
+                  <button
+                    type="button"
+                    key={i}
+                    title={i}
+                    aria-label={"Choose icon " + i}
+                    aria-pressed={icon === i}
+                    onClick={() => setIcon(i)}
+                  >
+                    <SymbolIcon name={i} />
+                    <small>{i}</small>
+                  </button>
                 ))}
-              </select>
+              </div>
             </Field>
           </div>
           {dialog.kind !== "folder" && (
             <>
               <Field label="How would you like to study?">
-                <select
-                  value={approach}
-                  onChange={(e) => setApproach(e.target.value)}
-                >
-                  {[
-                    "mixed",
-                    "concise summaries",
-                    "worked examples",
-                    "question-and-answer practice",
-                    "visual explanations",
-                  ].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
+                <MethodPicker value={approach} onChange={setApproach} />
               </Field>
               <label className="checkbox-field">
                 <input
@@ -656,6 +725,9 @@ export default function Dialogs({
                 Object.assign(d, {
                   term: name.trim(),
                   definition: body,
+                  noteId:
+                    existingDefinition?.noteId ??
+                    String(dialog.sourceId ?? active?.id ?? ""),
                   aliases: aliases
                     .split(",")
                     .map((a) => a.trim())
@@ -671,6 +743,7 @@ export default function Dialogs({
               } else
                 s.definitions.push({
                   id: uid(),
+                  noteId: String(dialog.sourceId ?? active?.id ?? ""),
                   term: name.trim(),
                   definition: body,
                   aliases: aliases
@@ -728,6 +801,14 @@ export default function Dialogs({
             </select>
           </Field>
           {errors}
+          {!existingDefinition && active && (
+            <AISuggestion
+              ctx={ctx}
+              kind="definition"
+              passage={name}
+              onResult={(_q, a) => setBody(a)}
+            />
+          )}
           {formFooter("Save definition")}
         </form>
       </Modal>
@@ -918,6 +999,7 @@ export default function Dialogs({
                 addReview(s, {
                   front: name,
                   back: body,
+                  groupId: groupId || undefined,
                   sourceType: (dialog.sourceType as "definition") ?? "note",
                   sourceId: String(dialog.sourceId ?? active?.id ?? ""),
                   sourceRevision: active?.revision,
@@ -947,6 +1029,18 @@ export default function Dialogs({
               placeholder="Explain the answer in your own words."
             />
           </Field>
+          <GroupSelect ctx={ctx} value={groupId} onChange={setGroupId} />
+          {active && (
+            <AISuggestion
+              ctx={ctx}
+              kind="card"
+              passage={String(dialog.passage ?? dialog.value ?? body)}
+              onResult={(q, a) => {
+                setName(q);
+                setBody(a);
+              }}
+            />
+          )}
           {formFooter("Add to review")}
         </form>
       </Modal>
@@ -1994,6 +2088,28 @@ export default function Dialogs({
                 placeholder="Help a reader know where to begin."
               />
             </Field>
+            <div className="form-row">
+              <Field label="Research category">
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  {categories.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Tags · comma separated">
+                <input value={tags} onChange={(e) => setTags(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Study method">
+              <MethodPicker value={approach} onChange={setApproach} />
+            </Field>
+            <p className="muted">
+              Author: {w.settings.displayName}. Change your public attribution
+              in Settings → Profile.
+            </p>
             <Field label="Change summary">
               <input
                 value={body}
@@ -2038,6 +2154,13 @@ export default function Dialogs({
                           active?.title ||
                           "Research collection",
                         description,
+                        category,
+                        studyMethod: approach,
+                        topics: tags
+                          .split(",")
+                          .map((t) => t.trim())
+                          .filter(Boolean)
+                          .slice(0, 20),
                         summary: body || "Published research",
                         allowCopies,
                         allowDownload,
@@ -2086,12 +2209,27 @@ export default function Dialogs({
             </div>
             <div className="publication-reader-preview">
               <h2>{snapshot.title}</h2>
+              <p>
+                {snapshot.author} · {snapshot.category} · {snapshot.studyMethod}
+              </p>
+              <p>
+                {publicationCounts(snapshot).folders} folders ·{" "}
+                {publicationCounts(snapshot).files} files ·{" "}
+                {publicationCounts(snapshot).sources} identifiable sources ·{" "}
+                {publicationCounts(snapshot).annotations} author annotations
+              </p>
+              <small>
+                Sources are unique structured source identifiers; annotations
+                are explicitly selected author comments. Private study notes are
+                excluded.
+              </small>
               <p>{snapshot.description}</p>
               {snapshot.notes.map((n) => (
                 <section key={n.id}>
                   <h3>{n.title}</h3>
                   <Markdown
                     body={n.body}
+                    notes={snapshot.notes}
                     attachments={w.attachments.filter((a) =>
                       snapshot.attachments?.some((x) => x.id === a.id),
                     )}
@@ -2226,9 +2364,24 @@ export default function Dialogs({
             </div>
             <Markdown body={p.current.description} />
             {p.current.notes.map((n) => (
-              <section key={n.id}>
+              <section key={n.id} id={"published-" + n.id}>
                 <h2>{n.title}</h2>
-                <Markdown body={n.body} definitions={p.current.definitions} />
+                <Markdown
+                  body={n.body}
+                  definitions={p.current.definitions}
+                  notes={p.current.notes}
+                  onLink={(target) => {
+                    const n = p.current.notes.find(
+                      (n) => n.id === target || n.title === target,
+                    );
+                    if (n)
+                      document
+                        .getElementById("published-" + n.id)
+                        ?.scrollIntoView({ block: "start" });
+                    else
+                      ctx.toast("Linked note unavailable in this publication.");
+                  }}
+                />
               </section>
             ))}
             <div className="dialog-footer">

@@ -47,6 +47,31 @@ export default function JobStatus({ demo }: { demo: boolean }) {
                   {j.status === "running" ? " · " + j.progress + "%" : ""}
                 </small>
                 {j.error && <p>{j.error}</p>}
+                {j.kind === "export" &&
+                  ["queued", "running"].includes(j.status) && (
+                    <>
+                      <progress
+                        aria-label="Export preparation"
+                        max={100}
+                        value={
+                          j.status === "queued" || j.result?.indeterminate
+                            ? undefined
+                            : j.progress
+                        }
+                      />
+                      <small>
+                        {j.result?.phase ?? "Waiting for the export worker…"}
+                      </small>
+                    </>
+                  )}
+                {j.kind === "export" &&
+                  j.status === "succeeded" &&
+                  !j.result?.expired && (
+                    <small>
+                      Archive ready. Choose Download; your browser manages the
+                      transfer.
+                    </small>
+                  )}
                 {j.result?.expired && (
                   <small>
                     Export download expired. Request a fresh export.

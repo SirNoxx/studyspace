@@ -29,6 +29,8 @@ export const PublicationInput = z.object({
     allowDownload: z.boolean(),
     allowQA: z.boolean(),
     topics: z.array(z.string().max(50)).max(20).default([]),
+    category: z.string().max(100).default("General research"),
+    studyMethod: z.string().max(100).default("mixed"),
   }),
 });
 

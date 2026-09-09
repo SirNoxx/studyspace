@@ -65,6 +65,14 @@ import { browserClient } from "@/lib/supabase/browser";
 import { clearAccountCache } from "@/lib/store";
 import MergeReview from "./study/MergeReview";
 import JobStatus from "./JobStatus";
+import {
+  CardCollections,
+  GroupSelect,
+  JournalCalendar,
+  ThemeExtras,
+  JournalIcon,
+} from "./WorkspaceEnhancements";
+import { categories, publicationCounts } from "@/lib/enhancements";
 export default function WorkspaceViews({
   ctx,
   view,
@@ -83,6 +91,9 @@ export default function WorkspaceViews({
     [revealed, setRevealed] = useState(false),
     [lastGrade, setLastGrade] = useState<string | null>(null),
     [reviewMode, setReviewMode] = useState("daily"),
+    [cardGroup, setCardGroup] = useState("all"),
+    [discoverCategory, setDiscoverCategory] = useState("all"),
+    [discoverSort, setDiscoverSort] = useState("newest"),
     [settingsTab, setSettingsTab] = useState("Appearance"),
     [remote, setRemote] = useState<Snapshot[]>([]),
     [loading, setLoading] = useState(false),
@@ -125,7 +136,14 @@ export default function WorkspaceViews({
   useEffect(() => {
     if (view !== "discover" || ctx.demo) return;
     setLoading(true);
-    fetch("/api/publications?q=" + encodeURIComponent(query))
+    fetch(
+      "/api/publications?q=" +
+        encodeURIComponent(query) +
+        "&category=" +
+        encodeURIComponent(discoverCategory) +
+        "&sort=" +
+        discoverSort,
+    )
       .then(async (r) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.error);
@@ -133,7 +151,7 @@ export default function WorkspaceViews({
       })
       .catch((e) => setRemoteError(e.message))
       .finally(() => setLoading(false));
-  }, [view, query, ctx.demo]);
+  }, [view, query, ctx.demo, discoverCategory, discoverSort]);
   useEffect(() => {
     if (view !== "inbox" || ctx.demo) return;
     fetch("/api/community")
@@ -494,6 +512,12 @@ export default function WorkspaceViews({
               <Moon size={15} /> Dream journal
             </button>
           </div>
+          <JournalCalendar
+            ctx={ctx}
+            date={date}
+            onDate={setDate}
+            isDream={isDream}
+          />
           <div className="journal-date">
             <div>
               <span className="eyebrow">
@@ -565,8 +589,10 @@ export default function WorkspaceViews({
               </button>
             )}
           </div>
+          <h3 className="section-label">Entries for {date}</h3>
+          {noteRows(entries.filter((n) => n.journalDate === date))}
           <h3 className="section-label">Recent entries</h3>
-          {noteRows(entries)}
+          {noteRows(entries.filter((n) => n.journalDate !== date))}
           {!entries.length && (
             <p className="muted">
               Your first entry can be as short as a sentence.
@@ -585,7 +611,10 @@ export default function WorkspaceViews({
     );
     const newUsed = eventsToday.filter((e) => e.before.state === "new").length;
     const reviewUsed = eventsToday.length - newUsed;
-    const due = w.review
+    const selectedCards = w.review.filter(
+      (r) => cardGroup === "all" || (r.groupId ?? "") === cardGroup,
+    );
+    const due = selectedCards
       .filter(
         (r) =>
           !r.suspended &&
@@ -603,7 +632,7 @@ export default function WorkspaceViews({
       return {
         date,
         label: d.toLocaleDateString(undefined, { weekday: "short" }),
-        count: w.review.filter(
+        count: selectedCards.filter(
           (r) =>
             !r.suspended &&
             localDate(w.settings.timezone, new Date(r.schedule.due)) === date,
@@ -624,6 +653,14 @@ export default function WorkspaceViews({
               <Plus size={16} /> Create card
             </button>,
           )}
+          <CardCollections
+            ctx={ctx}
+            value={cardGroup}
+            onChange={(id) => {
+              setCardGroup(id);
+              setRevealed(false);
+            }}
+          />
           <div className="review-overview">
             <div>
               <strong>{due.length}</strong>
@@ -632,7 +669,7 @@ export default function WorkspaceViews({
             <div>
               <strong>
                 {
-                  w.review.filter(
+                  selectedCards.filter(
                     (r) => r.schedule.state === "new" && !r.suspended,
                   ).length
                 }
@@ -640,7 +677,17 @@ export default function WorkspaceViews({
               <span>new ideas</span>
             </div>
             <div>
-              <strong>{eventsToday.length}</strong>
+              <strong>
+                {
+                  selectedCards.flatMap((r) =>
+                    r.events.filter(
+                      (e) =>
+                        localDate(w.settings.timezone, new Date(e.at)) ===
+                        today,
+                    ),
+                  ).length
+                }
+              </strong>
               <span>reviewed today</span>
             </div>
             <div className="segmented">
@@ -813,46 +860,63 @@ export default function WorkspaceViews({
           </button>
           {showAllReview && (
             <div className="review-manage">
-              {w.review.map((r) => (
-                <div key={r.id}>
-                  <strong>{r.front.slice(0, 100)}</strong>
-                  <small>
-                    {r.suspended
-                      ? "Suspended"
-                      : "Due " + new Date(r.schedule.due).toLocaleString()}
-                  </small>
-                  <input
-                    aria-label={"Reschedule " + r.front}
-                    type="date"
-                    value={r.schedule.due.slice(0, 10)}
-                    onChange={(e) =>
-                      mutate((s) => {
-                        s.review.find((c) => c.id === r.id)!.schedule.due =
-                          new Date(e.target.value + "T12:00:00").toISOString();
-                      })
-                    }
-                  />
-                  <button
-                    onClick={() =>
-                      mutate((s) => {
-                        const c = s.review.find((c) => c.id === r.id)!;
-                        c.suspended = !c.suspended;
-                      })
-                    }
-                  >
-                    {r.suspended ? "Resume" : "Suspend"}
-                  </button>
-                  <button
-                    onClick={() =>
-                      mutate((s) => {
-                        s.review = s.review.filter((c) => c.id !== r.id);
-                      })
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
+              {w.review
+                .filter(
+                  (r) => cardGroup === "all" || (r.groupId ?? "") === cardGroup,
+                )
+                .map((r) => (
+                  <div key={r.id}>
+                    <strong>{r.front.slice(0, 100)}</strong>
+                    <GroupSelect
+                      ctx={ctx}
+                      value={r.groupId}
+                      label={"Collection for " + r.front.slice(0, 60)}
+                      onChange={(id) =>
+                        mutate((w) => {
+                          w.review.find((c) => c.id === r.id)!.groupId =
+                            id || undefined;
+                        })
+                      }
+                    />
+                    <small>
+                      {r.suspended
+                        ? "Suspended"
+                        : "Due " + new Date(r.schedule.due).toLocaleString()}
+                    </small>
+                    <input
+                      aria-label={"Reschedule " + r.front}
+                      type="date"
+                      value={r.schedule.due.slice(0, 10)}
+                      onChange={(e) =>
+                        mutate((s) => {
+                          s.review.find((c) => c.id === r.id)!.schedule.due =
+                            new Date(
+                              e.target.value + "T12:00:00",
+                            ).toISOString();
+                        })
+                      }
+                    />
+                    <button
+                      onClick={() =>
+                        mutate((s) => {
+                          const c = s.review.find((c) => c.id === r.id)!;
+                          c.suspended = !c.suspended;
+                        })
+                      }
+                    >
+                      {r.suspended ? "Resume" : "Suspend"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        mutate((s) => {
+                          s.review = s.review.filter((c) => c.id !== r.id);
+                        })
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
             </div>
           )}
         </div>
@@ -964,11 +1028,26 @@ export default function WorkspaceViews({
             .filter((p) => p.status === "published")
             .map((p) => p.current)
         : remote
-    ).filter((p) =>
-      (p.title + " " + p.description + " " + p.author + " " + p.topics)
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-    );
+    )
+      .filter((p) =>
+        (p.title + " " + p.description + " " + p.author + " " + p.topics)
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+      )
+      .filter(
+        (p) =>
+          discoverCategory === "all" ||
+          (p.category ?? "General research") === discoverCategory,
+      )
+      .sort((a, b) =>
+        discoverSort === "popular"
+          ? ctx.demo
+            ? w.copies.filter((c) => c.publicationId === b.publicationId)
+                .length -
+              w.copies.filter((c) => c.publicationId === a.publicationId).length
+            : (b.popularity ?? 0) - (a.popularity ?? 0)
+          : b.createdAt.localeCompare(a.createdAt),
+      );
     return (
       <div className="view-scroll">
         <div className="workspace-view discover-view">
@@ -986,6 +1065,37 @@ export default function WorkspaceViews({
               placeholder="A topic, a question, an author…"
             />
           </div>
+          <div className="discover-controls">
+            <button
+              className="primary"
+              onClick={() => setDialog({ type: "publish-picker" })}
+            >
+              <Globe size={15} />
+              Publish a collection or folder
+            </button>
+            <select
+              aria-label="Browse research category"
+              value={discoverCategory}
+              onChange={(e) => setDiscoverCategory(e.target.value)}
+            >
+              <option value="all">All categories</option>
+              {categories.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Discover order"
+              value={discoverSort}
+              onChange={(e) => setDiscoverSort(e.target.value)}
+            >
+              <option value="newest">Newest research</option>
+              <option value="popular">Popular · study copies</option>
+            </select>
+          </div>
+          <p className="muted">
+            Popularity counts currently saved independent study copies of a
+            publication.
+          </p>
           {ctx.demo && (
             <p className="demo-disclosure">
               <Globe size={15} /> Local demo publications only. Nothing here is
@@ -997,6 +1107,15 @@ export default function WorkspaceViews({
           <div className="discovery-list">
             {publications.map((p) => (
               <article className="discovery-card" key={p.id}>
+                <p className="muted">
+                  {p.category ?? "General research"} ·{" "}
+                  {ctx.demo
+                    ? w.copies.filter(
+                        (c) => c.publicationId === p.publicationId,
+                      ).length
+                    : (p.popularity ?? 0)}{" "}
+                  study copies · {publicationCounts(p).sources} sources
+                </p>
                 <div className="discovery-card-top">
                   <span className="collection-cover">
                     <BookA size={28} strokeWidth={1.3} />
@@ -1324,6 +1443,35 @@ export default function WorkspaceViews({
                       ))}
                     </div>
                   </Field>
+                  <ThemeExtras ctx={ctx} />
+                  <SettingToggle
+                    label="Compact main navigation"
+                    description="Hide tab names beneath the icons."
+                    value={!!w.settings.ribbonCompact}
+                    onChange={(v) => update("ribbonCompact", v)}
+                  />
+                  <SettingToggle
+                    label="Compact right-side tools"
+                    description="Show icons with tooltips instead of labels."
+                    value={!!w.settings.toolsCompact}
+                    onChange={(v) => update("toolsCompact", v)}
+                  />
+                  <SettingToggle
+                    label="Show AI Chat launcher"
+                    description="Open the study assistant from the writing screen."
+                    value={!w.settings.chatHidden}
+                    onChange={(v) => update("chatHidden", !v)}
+                  />
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      mutate((w) => {
+                        w.settings.onboardingComplete = false;
+                      })
+                    }
+                  >
+                    Revisit welcome walkthrough
+                  </button>
                   <SettingToggle
                     label="Colored collection rows"
                     description="Bring a little more of each collection’s color into the explorer."
@@ -1680,6 +1828,17 @@ export default function WorkspaceViews({
               )}
               {settingsTab === "Data" && (
                 <>
+                  <button
+                    className="primary"
+                    onClick={() => void ctx.exportData()}
+                  >
+                    Export all Markdown notes as ZIP
+                  </button>
+                  <p className="muted">
+                    Includes your folder hierarchy and readable filenames. The
+                    archive is prepared in the background; your browser controls
+                    the final download.
+                  </p>
                   <div className="storage-summary">
                     <strong>
                       {(

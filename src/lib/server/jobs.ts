@@ -145,7 +145,28 @@ export async function executeJob(job: any) {
       warnings: report.warnings,
     };
   }
+  let lastProgress = 0;
+  let progressWrites = Promise.resolve();
   const bytes = await exportWorkspace(w, {
+    onProgress: (value, message) => {
+      if (
+        Date.now() - lastProgress < 500 &&
+        value !== 100 &&
+        !message.startsWith("Compressing")
+      )
+        return;
+      lastProgress = Date.now();
+      progressWrites = progressWrites.then(async () => {
+        await db
+          .from("jobs")
+          .update({
+            progress: value ?? 0,
+            result: { phase: message, indeterminate: value === undefined },
+          })
+          .eq("id", job.id)
+          .eq("worker_id", job.worker_id);
+      });
+    },
     ...validated.payload,
     loadAsset: async (a) => {
       if (!a.key.startsWith(owner + "/"))
@@ -157,6 +178,7 @@ export async function executeJob(job: any) {
       return new Uint8Array(await data.arrayBuffer());
     },
   });
+  await progressWrites;
   await checkCancelled();
   const key = owner + "/exports/" + job.id + "-" + crypto.randomUUID() + ".zip";
   const { error } = await db.storage

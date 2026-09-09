@@ -261,6 +261,19 @@ export default function Markdown({
                   {children}
                 </button>
               );
+            if (
+              href?.startsWith("#note:") &&
+              /^[0-9a-f-]{36}$/i.test(href.slice(6)) &&
+              !notes.some((n) => n.id === href.slice(6))
+            )
+              return (
+                <span
+                  className="link-unavailable"
+                  title="Linked note unavailable"
+                >
+                  {children} (unavailable)
+                </span>
+              );
             return href?.startsWith("#note:") ? (
               <button
                 className="internal-link"

@@ -61,7 +61,7 @@ export function instantiateSnapshot(
       id: mapping[n.id],
       title: n.title,
       body: n.body.replace(
-        /(attachment:|#citation:)([0-9a-f-]{36})/gi,
+        /(attachment:|#citation:|#note:)([0-9a-f-]{36})/gi,
         (all, prefix, id) => (mapping[id] ? prefix + mapping[id] : all),
       ),
       linkMap: Object.fromEntries(
@@ -76,6 +76,7 @@ export function instantiateSnapshot(
     w.definitions.push({
       ...clone(d),
       id: mapping[d.id],
+      noteId: d.noteId ? mapping[d.noteId] : undefined,
       subjectIds: [root.id],
       createdAt: now(),
     });

@@ -31,6 +31,7 @@ beforeAll(async () => {
     "202609080006_clarification_events.sql",
     "202609080007_indexed_search.sql",
     "202609080008_storage_lifecycle.sql",
+    "202609080009_discover_browsing.sql",
   ])
     await db.exec(
       await readFile(
@@ -337,5 +338,47 @@ describe("PostgreSQL migrations, transactions and direct RLS", () => {
     } finally {
       await restored.close();
     }
+  });
+  it("ranks only visible publications by real aggregate study copies without exposing owners", async () => {
+    const publication = (await db.query("select id from publications limit 1"))
+      .rows[0] as any;
+    await db.query(
+      "update publications set status='published',hidden=false where id=$1",
+      [publication.id],
+    );
+    await db.query(
+      "insert into personal_records(id,owner_id,kind,data) values($1,$2,'copies',$3)",
+      [
+        uid(),
+        B,
+        JSON.stringify({
+          publicationId: publication.id,
+          privateText: "NEVER PUBLIC",
+        }),
+      ],
+    );
+    const result = await db.query(
+      "select discover_publications('PUBLIC','all','popular') item",
+    );
+    expect((result.rows[0] as any).item.popularity).toBe(1);
+    expect(JSON.stringify(result.rows)).not.toContain("NEVER PUBLIC");
+    expect(
+      (
+        await db.query(
+          "select discover_publications('PUBLIC','Science','popular')",
+        )
+      ).rows,
+    ).toHaveLength(0);
+    await db.query("update publications set hidden=true where id=$1", [
+      publication.id,
+    ]);
+    expect(
+      (await db.query("select discover_publications('','all','popular')")).rows,
+    ).toHaveLength(0);
+    await asUser(null, async () => {
+      await expect(
+        db.query("select discover_publications('','all','popular')"),
+      ).rejects.toThrow("permission denied");
+    });
   });
 });

@@ -108,6 +108,13 @@ import { IconButton, SymbolIcon, Menu, Empty } from "./ui";
 import Markdown from "./Markdown";
 import type { EditorHandle } from "./Editor";
 import Dialogs from "./WorkspaceDialogs";
+import {
+  JournalIcon,
+  ChatLauncher,
+  Onboarding,
+  toolDescriptions,
+} from "./WorkspaceEnhancements";
+import { normalizeWorkspace } from "@/lib/enhancements";
 import Inspector from "./Inspector";
 import WorkspaceViews from "./WorkspaceViews";
 const Editor = dynamic(() => import("./Editor"), {
@@ -153,7 +160,7 @@ const ribbon = [
   { id: "collections", label: "Collections", icon: Library },
   { id: "search", label: "Search", icon: Search },
   { id: "bookmarks", label: "Bookmarks", icon: Bookmark },
-  { id: "journal", label: "Journal", icon: CalendarDays },
+  { id: "journal", label: "Journal", icon: JournalIcon },
   { id: "review", label: "Review", icon: Layers },
   { id: "discover", label: "Discover", icon: Compass },
 ];
@@ -192,6 +199,16 @@ export default function WorkspaceApp({
     [mode, setMode] = useState<"source" | "live" | "reading">("live"),
     [dialog, setDialogState] = useState<DialogState>(null),
     [selection, setSelection] = useState(""),
+    [renaming, setRenaming] = useState<{ id: string; value: string } | null>(
+      null,
+    ),
+    [tour, setTour] = useState(false),
+    [tourStep, setTourStep] = useState(0),
+    [exportProgress, setExportProgress] = useState<{
+      value?: number;
+      message: string;
+      busy: boolean;
+    } | null>(null),
     [saveStatus, setSaveStatus] = useState("Opening workspace…"),
     [notice, setNotice] = useState(""),
     [sort, setSort] = useState("manual"),
@@ -224,8 +241,20 @@ export default function WorkspaceApp({
       if (wRef.current) setW(wRef.current);
     }
   };
+  useEffect(() => {
+    if (w?.settings.onboardingComplete === false) {
+      setTour(true);
+      setTourStep(0);
+      setLeft(true);
+      setRight(true);
+    }
+  }, [w?.settings.onboardingComplete]);
   const setDialog = (value: DialogState) => {
     flushRender();
+    if (value?.type === "container" && value.kind === "folder") {
+      addFolder(String(value.parentId ?? focus ?? general(wRef.current!).id));
+      return;
+    }
     setDialogState(value);
   };
   const definitionsForNote = useMemo(
@@ -303,6 +332,8 @@ export default function WorkspaceApp({
         const recovered = (await db.get("drafts", account + ":workspace")) as
           Workspace | undefined;
         if (cancelled) return;
+        Object.assign(state, normalizeWorkspace(state));
+        if (!demo && !state.settings.onboardingComplete) setTour(true);
         wRef.current = state;
         savedBase.current = state;
         setW(state);
@@ -481,14 +512,17 @@ export default function WorkspaceApp({
   }, []);
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setContextMenu(null);
-        if (dialog) setDialog(null);
-        else if (zen) setZen(false);
-        else if (innerWidth < 800) {
-          setRight(false);
-          setLeft(false);
-        }
+      if (e.defaultPrevented) return;
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === "k" &&
+        !dialog &&
+        activeId &&
+        view === "collections"
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        setDialog({ type: "hyperlink" });
         return;
       }
       const key =
@@ -500,11 +534,27 @@ export default function WorkspaceApp({
       ).find(([, v]) => v.toLowerCase() === key.toLowerCase())?.[0];
       if (!binding) return;
       e.preventDefault();
+      e.stopPropagation();
       if (binding === "zen") setZen((v) => !v);
       else if (binding === "search") setViewState("search");
       else setDialog({ type: binding === "quick" ? "quick" : binding });
     };
-    document.addEventListener("keydown", listener);
+    const escapeListener = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (e.key === "Escape") {
+        if (document.querySelectorAll('[role="dialog"]').length > 1) return;
+        setContextMenu(null);
+        if (dialog) setDialog(null);
+        else if (zen) setZen(false);
+        else if (innerWidth < 800) {
+          setRight(false);
+          setLeft(false);
+        }
+        return;
+      }
+    };
+    document.addEventListener("keydown", listener, true);
+    document.addEventListener("keydown", escapeListener);
     const online = () => void persist();
     window.addEventListener("online", online);
     const unload = (e: BeforeUnloadEvent) => {
@@ -515,11 +565,12 @@ export default function WorkspaceApp({
     };
     window.addEventListener("beforeunload", unload);
     return () => {
-      document.removeEventListener("keydown", listener);
+      document.removeEventListener("keydown", listener, true);
+      document.removeEventListener("keydown", escapeListener);
       window.removeEventListener("online", online);
       window.removeEventListener("beforeunload", unload);
     };
-  }, [dialog, zen, persist]);
+  }, [dialog, zen, persist, activeId, view]);
   const active = w?.notes.find((n) => n.id === activeId && !n.trashed),
     focused = w?.containers.find((c) => c.id === focus && !c.trashed),
     activeRoot = active && w ? rootOf(w, active.containerId) : undefined;
@@ -535,6 +586,40 @@ export default function WorkspaceApp({
       id = createNote(s, parentId ?? focus ?? general(s).id).id;
     });
     openNote(id);
+  };
+  const addFolder = (parentId: string) => {
+    let id = "";
+    mutate((s) => {
+      id = createContainer(s, {
+        title: "Untitled",
+        kind: "folder",
+        parentId,
+        dictionary: false,
+      }).id;
+    });
+    if (id) {
+      setExpanded((e) => [
+        ...new Set([
+          ...e,
+          ...ancestry(wRef.current!, parentId).map((c) => c.id),
+        ]),
+      ]);
+      setRenaming({ id, value: "Untitled" });
+      setLeft(true);
+      setViewState("collections");
+    }
+  };
+  const finishRename = () => {
+    if (!renaming) return;
+    const title = renaming.value.trim() || "Untitled";
+    mutate((s) => {
+      const c = s.containers.find((c) => c.id === renaming.id);
+      if (c) {
+        c.title = title.slice(0, 240);
+        c.updatedAt = now();
+      }
+    });
+    setRenaming(null);
   };
   const exportData = async (
     options: { containerId?: string; noteId?: string; full?: boolean } = {},
@@ -557,9 +642,15 @@ export default function WorkspaceApp({
         toast("Export queued. Download it when the worker finishes.");
         return;
       }
-      toast("Preparing portable export…");
+      setExportProgress({
+        message: "Collecting Markdown and files…",
+        value: 0,
+        busy: true,
+      });
       const bytes = await exportWorkspace(wRef.current, {
         ...options,
+        onProgress: (value, message) =>
+          setExportProgress({ value, message, busy: true }),
         loadAsset: async (a) => {
           if (demo) {
             const blob = (await (await localDB()).get("assets", a.id)) as
@@ -581,8 +672,16 @@ export default function WorkspaceApp({
         bytes,
         "studyspace-" + new Date().toISOString().slice(0, 10) + ".zip",
       );
-      toast("Export downloaded.");
+      setExportProgress({
+        value: 100,
+        message: "Archive ready. Download handed to your browser.",
+        busy: false,
+      });
     } catch (e) {
+      setExportProgress({
+        message: "Export failed: " + (e as Error).message,
+        busy: false,
+      });
       toast((e as Error).message);
     }
   };
@@ -711,6 +810,11 @@ export default function WorkspaceApp({
       ...(c
         ? [
             { label: "New note", icon: FileText, action: () => addNote(id) },
+            {
+              label: "View attachments",
+              icon: Paperclip,
+              action: () => setDialog({ type: "folder-attachments", id }),
+            },
             {
               label: "New folder",
               icon: FolderPlus,
@@ -939,13 +1043,59 @@ export default function WorkspaceApp({
                 name={c.kind === "folder" ? "folder" : c.icon}
                 size={16}
               />
-              <button
-                className="tree-title"
-                title={"Focus " + c.title}
-                onClick={() => setFocus(c.id)}
-              >
-                {c.title}
-              </button>
+              {renaming?.id === c.id ? (
+                <input
+                  className="inline-rename"
+                  aria-label="Folder name"
+                  autoFocus
+                  ref={(el) => {
+                    if (el && document.activeElement !== el) {
+                      el.focus();
+                      el.select();
+                    }
+                  }}
+                  value={renaming.value}
+                  onChange={(e) =>
+                    setRenaming({ id: c.id, value: e.target.value })
+                  }
+                  onBlur={finishRename}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      finishRename();
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setRenaming(null);
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  className="tree-title"
+                  title={"Focus " + c.title}
+                  onClick={() => setFocus(c.id)}
+                >
+                  {c.title}
+                </button>
+              )}
+              <span className="tree-create">
+                <button
+                  aria-label={"New folder in " + c.title}
+                  title="New folder"
+                  onClick={() => addFolder(c.id)}
+                >
+                  <FolderPlus size={14} />
+                </button>
+                <button
+                  aria-label={"New file in " + c.title}
+                  title="New file"
+                  onClick={() => addNote(c.id)}
+                >
+                  <FileText size={14} />
+                </button>
+              </span>
               <Menu
                 trigger={
                   <button
@@ -1101,6 +1251,7 @@ export default function WorkspaceApp({
       style={
         {
           "--left-width": leftWidth + "px",
+          "--ribbon-width": w.settings.ribbonCompact ? "48px" : "86px",
           "--right-width": rightWidth + "px",
           "--editor-size": w.settings.fontSize + "px",
           "--editor-line-height": w.settings.lineHeight,
@@ -1113,7 +1264,14 @@ export default function WorkspaceApp({
         } as CSSProperties
       }
     >
-      <nav className="activity-ribbon" aria-label="Main navigation">
+      <nav
+        className={
+          "activity-ribbon " +
+          (!w.settings.ribbonCompact ? "ribbon-labeled " : "") +
+          (tour && tourStep < 2 ? "tour-target" : "")
+        }
+        aria-label="Main navigation"
+      >
         <a
           className="ribbon-brand"
           href={demo ? "/demo" : "/w"}
@@ -1121,6 +1279,26 @@ export default function WorkspaceApp({
         >
           <BookOpen size={23} />
         </a>
+        <button
+          className="ribbon-toggle"
+          aria-label={
+            w.settings.ribbonCompact
+              ? "Expand navigation labels"
+              : "Collapse navigation labels"
+          }
+          aria-expanded={!w.settings.ribbonCompact}
+          onClick={() =>
+            mutate((s) => {
+              s.settings.ribbonCompact = !s.settings.ribbonCompact;
+            })
+          }
+        >
+          {w.settings.ribbonCompact ? (
+            <ChevronRight size={17} />
+          ) : (
+            <ChevronDown size={17} />
+          )}
+        </button>
         <div className="ribbon-main">
           {ribbon.map((item) => (
             <IconButton
@@ -1135,6 +1313,9 @@ export default function WorkspaceApp({
               }}
             >
               <item.icon size={20} />
+              {!w.settings.ribbonCompact && (
+                <span className="ribbon-label">{item.label}</span>
+              )}
               {item.id === "review" &&
                 w.review.some(
                   (r) => !r.suspended && r.schedule.due <= now(),
@@ -1149,6 +1330,9 @@ export default function WorkspaceApp({
             onClick={() => setView("inbox")}
           >
             <Bell size={19} />
+            {!w.settings.ribbonCompact && (
+              <span className="ribbon-label">Inbox</span>
+            )}
             {w.notifications.some((n) => !n.read) && (
               <span className="ribbon-dot" />
             )}
@@ -1159,6 +1343,9 @@ export default function WorkspaceApp({
             onClick={() => setView("settings")}
           >
             <Settings size={19} />
+            {!w.settings.ribbonCompact && (
+              <span className="ribbon-label">Settings</span>
+            )}
           </IconButton>
           <button
             className="avatar"
@@ -1196,7 +1383,12 @@ export default function WorkspaceApp({
                   {demo ? "Local demo · on this device" : "Private workspace"}
                 </small>
               </span>
-              <ChevronDown size={14} />
+            </button>
+            <button
+              className="quick-actions-label"
+              onClick={() => setDialog({ type: "palette" })}
+            >
+              Quick actions <ChevronDown size={14} />
             </button>
             <div className="capture-actions">
               <button
@@ -1269,6 +1461,18 @@ export default function WorkspaceApp({
               >
                 <SymbolIcon name={focused.icon} size={19} />
                 <strong>{focused.title}</strong>
+                <button
+                  aria-label={"New folder in " + focused.title}
+                  onClick={() => addFolder(focused.id)}
+                >
+                  <FolderPlus size={15} />
+                </button>
+                <button
+                  aria-label={"New file in " + focused.title}
+                  onClick={() => addNote(focused.id)}
+                >
+                  <FileText size={15} />
+                </button>
                 <Menu
                   trigger={
                     <button
@@ -1674,7 +1878,7 @@ export default function WorkspaceApp({
                   {mode === "reading" && (
                     <Markdown
                       attachments={w.attachments}
-                      notes={w.notes}
+                      notes={w.notes.filter((n) => !n.trashed)}
                       demo={demo}
                       fromPath={active.originalPath ?? active.title + ".md"}
                       density={w.settings.dictionaryDensity}
@@ -1961,7 +2165,11 @@ export default function WorkspaceApp({
               </IconButton>
             </header>
             <div
-              className="inspector-tabs"
+              className={
+                "inspector-tabs " +
+                (!w.settings.toolsCompact ? "tools-labeled " : "") +
+                (tour && tourStep === 2 ? "tour-target" : "")
+              }
               role="tablist"
               aria-label="Inspector tools"
             >
@@ -1974,11 +2182,50 @@ export default function WorkspaceApp({
                   aria-label={t.label}
                   className={inspector === t.id ? "active" : ""}
                   onClick={() => setInspector(t.id)}
+                  onKeyDown={(e) => {
+                    const i = inspectorTabs.findIndex((x) => x.id === t.id);
+                    const next =
+                      e.key === "ArrowRight"
+                        ? (i + 1) % inspectorTabs.length
+                        : e.key === "ArrowLeft"
+                          ? (i + inspectorTabs.length - 1) %
+                            inspectorTabs.length
+                          : e.key === "Home"
+                            ? 0
+                            : e.key === "End"
+                              ? inspectorTabs.length - 1
+                              : -1;
+                    if (next >= 0) {
+                      e.preventDefault();
+                      setInspector(inspectorTabs[next].id);
+                      (
+                        e.currentTarget.parentElement?.children[
+                          next
+                        ] as HTMLElement
+                      )?.focus();
+                    }
+                  }}
                 >
                   <t.icon size={17} />
+                  {!w.settings.toolsCompact && <span>{t.label}</span>}
                 </button>
               ))}
             </div>
+            <button
+              className="tools-toggle text-button"
+              onClick={() =>
+                mutate((s) => {
+                  s.settings.toolsCompact = !s.settings.toolsCompact;
+                })
+              }
+            >
+              {w.settings.toolsCompact ? "Show tool labels" : "Compact tools"}
+            </button>
+            {tour && tourStep === 2 && (
+              <p className="tool-description" role="status">
+                {toolDescriptions[inspector]}
+              </p>
+            )}
             <Inspector ctx={ctx} panel={inspector} />
             <div className="inspector-bottom">
               <span className="tiny-dot" /> Understanding grows through
@@ -1987,8 +2234,81 @@ export default function WorkspaceApp({
           </aside>
         </>
       )}
+      {view === "collections" && active && selection.trim() && !dialog && (
+        <div
+          className="selection-context-menu"
+          role="toolbar"
+          aria-label="Selected text actions"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <button
+            onClick={() =>
+              setDialog({
+                type: "definition",
+                value: selection,
+                sourceId: active.id,
+              })
+            }
+          >
+            <BookA size={14} />
+            Add to dictionary
+          </button>
+          <button
+            onClick={() =>
+              setDialog({
+                type: "review-card",
+                value: "",
+                answer: selection,
+                passage: selection,
+                sourceId: active.id,
+              })
+            }
+          >
+            <Layers size={14} />
+            Create study card
+          </button>
+          <button onClick={() => setDialog({ type: "hyperlink" })}>
+            <Link2 size={14} />
+            Insert / edit link
+          </button>
+        </div>
+      )}
+      {view === "collections" && active && <ChatLauncher ctx={ctx} />}
+      {exportProgress && (
+        <div className="export-progress" role="status">
+          <strong>{exportProgress.message}</strong>
+          <progress
+            aria-label="Export preparation"
+            max={100}
+            value={exportProgress.value}
+          />
+          {!exportProgress.busy && (
+            <button
+              aria-label="Dismiss export status"
+              onClick={() => setExportProgress(null)}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+      )}
+      {tour && (
+        <Onboarding
+          ctx={ctx}
+          step={tourStep}
+          onStep={(step) => {
+            setTourStep(step);
+            if (step === 2) {
+              setRight(true);
+              if (innerWidth <= 1050) setLeft(false);
+            }
+          }}
+          onClose={() => setTour(false)}
+        />
+      )}
       {dialog && (
         <Dialogs
+          key={dialog.type + ":" + (dialog.id ?? dialog.parentId ?? "")}
           ctx={ctx}
           dialog={dialog}
           onClose={() => {

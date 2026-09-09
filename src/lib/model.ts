@@ -1,6 +1,18 @@
 export type ID = string;
 export type NoteKind = "note" | "quick" | "journal" | "dream";
-export type Theme = "system" | "light" | "dark" | "paper";
+export type Theme =
+  | "system"
+  | "light"
+  | "dark"
+  | "paper"
+  | "winter"
+  | "spring"
+  | "summer"
+  | "fall"
+  | "tropical"
+  | "underwater"
+  | "space"
+  | "forest";
 export interface Container {
   id: ID;
   parentId: ID | null;
@@ -46,6 +58,7 @@ export interface Note {
   linkMap?: Record<string, ID>;
 }
 export interface Definition {
+  noteId?: ID;
   id: ID;
   term: string;
   aliases: string[];
@@ -126,6 +139,7 @@ export interface Schedule {
   due: string;
 }
 export interface ReviewItem {
+  groupId?: ID;
   id: ID;
   front: string;
   back: string;
@@ -147,6 +161,10 @@ export interface PublicNote {
   revision: number;
 }
 export interface Snapshot {
+  category?: string;
+  studyMethod?: string;
+  folderCount?: number;
+  popularity?: number;
   id: ID;
   publicationId: ID;
   version: number;
@@ -230,6 +248,11 @@ export interface AIRecord {
   evidence?: { id: string; text: string; title?: string; locator?: string }[];
 }
 export interface Settings {
+  ribbonCompact?: boolean;
+  toolsCompact?: boolean;
+  chatHidden?: boolean;
+  onboardingComplete?: boolean;
+  cardGroups?: { id: ID; title: string }[];
   theme: Theme;
   fontSize: number;
   lineHeight: number;

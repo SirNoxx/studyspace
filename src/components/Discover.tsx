@@ -1,19 +1,30 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Globe, Search, ArrowRight, BookOpen } from "lucide-react";
+import { categories, publicationCounts } from "@/lib/enhancements";
 import type { Snapshot } from "@/lib/model";
 export default function Discover() {
   const [query, setQuery] = useState(""),
     [items, setItems] = useState<Snapshot[]>([]),
     [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
+    [loading, setLoading] = useState(true),
+    [category, setCategory] = useState("all"),
+    [sort, setSort] = useState("newest");
   useEffect(() => {
     const abort = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
-      fetch("/api/publications?q=" + encodeURIComponent(query), {
-        signal: abort.signal,
-      })
+      fetch(
+        "/api/publications?q=" +
+          encodeURIComponent(query) +
+          "&category=" +
+          encodeURIComponent(category) +
+          "&sort=" +
+          sort,
+        {
+          signal: abort.signal,
+        },
+      )
         .then(async (r) => {
           const d = await r.json();
           if (!r.ok) throw new Error(d.error);
@@ -29,7 +40,7 @@ export default function Discover() {
       clearTimeout(timer);
       abort.abort();
     };
-  }, [query]);
+  }, [query, category, sort]);
   return (
     <div className="public-shell">
       <header className="public-header">
@@ -58,6 +69,33 @@ export default function Discover() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        <div className="discover-controls">
+          <a className="primary" href="/w/discover">
+            Publish a collection or folder
+          </a>
+          <select
+            aria-label="Browse research category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            <option value="all">All categories</option>
+            {categories.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Discover order"
+            value={sort}
+            onChange={(e) => setSort(e.target.value)}
+          >
+            <option value="newest">Newest research</option>
+            <option value="popular">Popular · study copies</option>
+          </select>
+        </div>
+        <p className="muted">
+          Popularity counts currently saved independent study copies. Only
+          explicitly published material appears here.
+        </p>
         {loading && <p role="status">Finding published research…</p>}
         {error && <p role="alert">{error}</p>}
         <div className="discover-grid">
@@ -68,6 +106,10 @@ export default function Discover() {
                 <a href={"/p/" + p.publicationId}>{p.title}</a>
               </h2>
               <p>{p.description}</p>
+              <p className="muted">
+                {p.category ?? "General research"} · {p.popularity ?? 0} study
+                copies · {publicationCounts(p).sources} sources
+              </p>
               <p className="muted">
                 {p.author} · {p.notes.length} notes
               </p>

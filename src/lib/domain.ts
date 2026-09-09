@@ -421,6 +421,15 @@ export function prepareSnapshot(
     description: "",
     author: w.settings.displayName,
     topics: [],
+    category: "General research",
+    studyMethod: "mixed",
+    folderCount: new Set(
+      selected.flatMap((n) =>
+        ancestry(w, n.containerId)
+          .filter((c) => c.kind === "folder")
+          .map((c) => c.id),
+      ),
+    ).size,
     notes: selected.map((n) => ({
       id: n.id,
       title: n.title,
@@ -440,6 +449,7 @@ export function prepareSnapshot(
       .map((d) => ({
         ...d,
         subjectIds: [],
+        noteId: d.noteId && selectedIds.has(d.noteId) ? d.noteId : undefined,
         definition: publicMarkdown(d.definition, titles, selectedIds),
       })),
     sources: w.sources

@@ -206,7 +206,9 @@ export default function PublicReader({
                 setDialog("definition");
               }}
               onLink={(target) => {
-                const n = p.notes.find((n) => n.title === target.split("#")[0]);
+                const n = p.notes.find(
+                  (n) => n.id === target || n.title === target.split("#")[0],
+                );
                 if (n) setNoteId(n.id);
                 else
                   setMessage(

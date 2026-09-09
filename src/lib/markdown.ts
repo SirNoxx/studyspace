@@ -26,6 +26,32 @@ export function proseRanges(markdown: string) {
   });
   return ranges;
 }
+/** Parsed references only: prose and code examples must not claim attachment ownership. */
+export function attachmentTargets(markdown: string): string[] {
+  const tree = parser.parse(
+    markdown.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
+  );
+  const found = new Set<string>();
+  const definitions = new Map<string, string>();
+  visit(tree, (node: any) => {
+    if (node.type === "definition") definitions.set(node.identifier, node.url);
+  });
+  visit(tree, (node: any) => {
+    if (node.type === "link" || node.type === "image") found.add(node.url);
+    if (node.type === "linkReference" || node.type === "imageReference") {
+      const url = definitions.get(node.identifier);
+      if (url) found.add(url);
+    }
+    if (node.type === "text")
+      for (const match of node.value.matchAll(
+        /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/g,
+      ))
+        found.add(match[1]);
+  });
+  return [...found].filter(
+    (target) => !/^(?:https?:|mailto:|data:|#)/i.test(target),
+  );
+}
 export function captureLinks(markdown: string): string[] {
   const found = new Set<string>();
   const tree = parser.parse(
@@ -187,6 +213,8 @@ export function publicMarkdown(
   safe = safe.replace(
     /!?\[([^\]]*)\]\(([^)]+)\)/g,
     (all, label: string, url: string) => {
+      if (url.startsWith("#note:"))
+        return ids.has(url.slice(6)) ? all : "[Unpublished reference]";
       const target = url.replace(/^\/?(?:w\/note|note)\//, "");
       if (url.startsWith("attachment:") && assets.has(url.slice(11)))
         return all;
@@ -214,6 +242,11 @@ export function resolveLink(
     metadata?: Record<string, unknown>;
   }[],
 ) {
+  const stable = target.replace(/^#note:/, "");
+  if (/^[0-9a-f-]{36}$/i.test(stable))
+    return notes.some((n) => n.id === stable)
+      ? { status: "resolved", id: stable }
+      : { status: "missing", candidates: [] };
   const raw = decodeURIComponent(target.split("|")[0].split("#")[0]).replace(
     /\.md$/i,
     "",

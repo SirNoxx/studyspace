@@ -1,4 +1,4 @@
-import { unzipSync, zipSync, strToU8 } from "fflate";
+import { unzipSync, zip, strToU8 } from "fflate";
 import {
   type Workspace,
   type Attachment,
@@ -411,6 +411,7 @@ function restoreManifest(
     map[d.id] = id;
     w.definitions.push({
       id,
+      noteId: map[d.noteId],
       term: d.term,
       definition: d.definition,
       aliases: Array.isArray(d.aliases) ? d.aliases : [],
@@ -455,7 +456,7 @@ function restoreManifest(
   }
   for (const n of notes)
     n.body = n.body.replace(
-      /(attachment:|#citation:)([0-9a-f-]{36})/gi,
+      /(attachment:|#citation:|#note:)([0-9a-f-]{36})/gi,
       (all, prefix, id) => (map[id] ? prefix + map[id] : all),
     );
   for (const a of manifest.annotations ?? [])
@@ -465,12 +466,28 @@ function restoreManifest(
         id: uid(),
         noteId: map[a.noteId] ?? a.noteId,
       });
+  for (const group of manifest.settings?.cardGroups ?? []) {
+    if (typeof group.title !== "string" || !group.title.trim()) continue;
+    const existing = w.settings.cardGroups?.find(
+      (g) => g.title === group.title,
+    );
+    if (existing) map[group.id] = existing.id;
+    else {
+      const id = uid();
+      map[group.id] = id;
+      (w.settings.cardGroups ??= []).push({
+        id,
+        title: group.title.slice(0, 120),
+      });
+    }
+  }
   for (const r of manifest.review ?? [])
     if (r.front && r.back && r.schedule?.algorithm === "studyspace-1")
       w.review.push({
         ...r,
         id: uid(),
         sourceId: map[r.sourceId],
+        groupId: map[r.groupId],
         subjectId: map[r.subjectId],
       });
   for (const a of manifest.ai ?? [])
@@ -503,6 +520,7 @@ export async function exportWorkspace(
     noteId?: string;
     full?: boolean;
     loadAsset?: (a: Attachment) => Promise<Uint8Array>;
+    onProgress?: (value: number | undefined, message: string) => void;
   },
 ) {
   const notes = w.notes.filter(
@@ -515,7 +533,15 @@ export async function exportWorkspace(
   const files: Record<string, Uint8Array> = {},
     mapping: Record<string, string> = {};
   const used = new Set<string>();
+  let preparedCount = 0;
   for (const n of notes) {
+    if (preparedCount++ % 50 === 0) {
+      options.onProgress?.(
+        Math.round((preparedCount / Math.max(1, notes.length)) * 65),
+        "Preparing Markdown files…",
+      );
+      await new Promise((r) => setTimeout(r, 0));
+    }
     let path =
       ancestry(w, n.containerId)
         .map((c) => portableName(c.title))
@@ -581,6 +607,7 @@ export async function exportWorkspace(
         options.full ||
         notes.some((n) => n.body.includes(a.id) || n.body.includes(a.filename))
       ) {
+        options.onProgress?.(undefined, "Collecting attachment: " + a.filename);
         const bytes = await options.loadAsset(a);
         if ((await sha256(bytes)) !== a.hash)
           throw new DomainError("Attachment checksum mismatch: " + a.filename);
@@ -594,9 +621,15 @@ export async function exportWorkspace(
   for (const n of notes) {
     const prefix = "../".repeat(mapping[n.id].split("/").length - 1);
     files[mapping[n.id]] = strToU8(
-      n.body.replace(/attachment:([0-9a-f-]{36})/gi, (all, id) =>
-        assetMapping[id] ? prefix + assetMapping[id] : all,
-      ),
+      n.body
+        .replace(/#note:([0-9a-f-]{36})/gi, (all, id) =>
+          mapping[id]
+            ? prefix + mapping[id].split("/").map(encodeURIComponent).join("/")
+            : all,
+        )
+        .replace(/attachment:([0-9a-f-]{36})/gi, (all, id) =>
+          assetMapping[id] ? prefix + assetMapping[id] : all,
+        ),
     );
   }
   const manifest = {
@@ -623,7 +656,16 @@ export async function exportWorkspace(
   files["studyspace-manifest.json"] = strToU8(
     JSON.stringify(manifest, null, 2),
   );
-  return zipSync(files, { level: 6 });
+  options.onProgress?.(undefined, "Compressing the archive…");
+  return new Promise<Uint8Array>((resolve, reject) =>
+    zip(files, { level: 6 }, (error, data) => {
+      if (error) reject(error);
+      else {
+        options.onProgress?.(100, "Archive ready");
+        resolve(data);
+      }
+    }),
+  );
 }
 export function downloadBytes(
   bytes: Uint8Array,

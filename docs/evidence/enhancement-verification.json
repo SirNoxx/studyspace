@@ -1,0 +1,103 @@
+{
+  "recordedAt": "2026-09-09T06:26:04.869224+00:00",
+  "environment": "Windows; Node 24.11.1; Next.js production server on http://127.0.0.1:3000; isolated Chromium test contexts",
+  "commands": [
+    {
+      "command": "npm run typecheck",
+      "status": "passed"
+    },
+    {
+      "command": "npm test",
+      "status": "passed",
+      "files": 8,
+      "tests": 54
+    },
+    {
+      "command": "npm run build",
+      "status": "passed"
+    },
+    {
+      "command": "npm start",
+      "status": "running",
+      "url": "http://127.0.0.1:3000"
+    },
+    {
+      "command": "E2E_BASE_URL=http://127.0.0.1:3000 E2E_BUILD_MODE=production npm run test:e2e -- --workers=1",
+      "status": "passed",
+      "tests": 17,
+      "seconds": 52.5
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "git bundle verify ../backups/studyspace-before-enhancements-20260908/studyspace.bundle",
+      "status": "passed",
+      "completeHistory": true
+    }
+  ],
+  "preservation": {
+    "baselineCommit": "36514d7e333731ff8b96566c84408e205a3b1d68",
+    "tag": "before-enhancements-20260908",
+    "originalBranch": "master",
+    "enhancementBranch": "feature/studyspace-enhancements",
+    "backupDirectory": "D:\\Coding Projects\\Note Taking App\\backups\\studyspace-before-enhancements-20260908",
+    "sha256": {
+      "studyspace.bundle": "8D16A27E151F3F6E2783D50D635D1651F6BA42438D73A2E2E8801553057850F0",
+      "studyspace-source.zip": "44B0E46BFB7905953635EB8E8F0C933DC77762772C8C86A160974F79E614B6B8"
+    },
+    "browserDatabase": "studyspace-device-v1, version 1 unchanged",
+    "localCheckpoint": "workspaces/before-enhancements:demo",
+    "userBrowserDataCleared": false,
+    "hostedMigrationsApplied": false
+  },
+  "accessibility": {
+    "existingThemes": "Light/Dark/Paper: zero axe violations in inspected views; see visual-qa.json",
+    "newThemes": "All eight: zero axe violations in Settings; see enhancement-themes.json",
+    "manualVisualInspection": [
+      "desktop-light.png",
+      "mobile.png",
+      "theme-underwater.png",
+      "theme-space.png",
+      "folder-attachments.png",
+      "onboarding-390.png",
+      "onboarding-844.png"
+    ]
+  },
+  "performance": {
+    "date": "2026-09-09T06:25:13.001Z",
+    "environment": "Windows local Next production server; Playwright chromium",
+    "notes": 10000,
+    "terms": 3000,
+    "characters": 30,
+    "keydownToAnimationFrameMs": {
+      "p50": 9,
+      "p95": 15.400000005960464,
+      "max": 32
+    },
+    "cachedSwitchIncludingPlaywrightMs": 167,
+    "targets": {
+      "typingFrameMs": 16,
+      "cachedSwitchMs": 200
+    },
+    "limits": "Synthetic key events and local device storage; network/database latency and IME are not measured."
+  },
+  "health": {
+    "status": "local-demo",
+    "database": "not-configured",
+    "ai": "not-configured"
+  },
+  "externalVerificationNotPerformed": [
+    "Real Supabase Auth/Storage and hosted discovery",
+    "Live AI suggestions (provider fixtures are labeled)",
+    "Hosted migration/deployment and persistent worker",
+    "Real email delivery and full hosted database/object restore",
+    "Physical screen-reader/IME and Safari/Firefox testing"
+  ],
+  "notes": [
+    "The new SQL migration was executed and tested in PGlite, including visibility, aggregate ranking, category filtering, and access denial. PGlite is not the Supabase Auth/Storage service.",
+    "Attachment browser verification uploads actual PNG bytes, checks decoded image dimensions, downloads the actual ZIP, and inspects archive paths and Markdown references.",
+    "Archive completion means prepared and handed to the browser, not browser download completion."
+  ]
+}

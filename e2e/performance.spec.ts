@@ -96,7 +96,7 @@ test("measures a realistic 10,000-note workspace without hiding unreachable tree
   );
   const switchMs = Date.now() - start;
   await writeFile(
-    process.env.E2E_BASE_URL
+    process.env.E2E_BUILD_MODE === "production"
       ? "docs/evidence/browser-performance-production.json"
       : "docs/evidence/browser-performance.json",
     JSON.stringify(
@@ -104,7 +104,9 @@ test("measures a realistic 10,000-note workspace without hiding unreachable tree
         date: new Date().toISOString(),
         environment:
           "Windows local Next " +
-          (process.env.E2E_BASE_URL ? "production" : "development") +
+          (process.env.E2E_BUILD_MODE === "production"
+            ? "production"
+            : "development") +
           " server; Playwright " +
           browserName,
         notes: 10000,

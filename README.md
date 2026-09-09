@@ -2,6 +2,8 @@
 
 A private Markdown workspace for writing, research, personal dictionaries, evidence, journals, review, and selectively published study collections. Built from [the supplied master prompt](docs/master-build-prompt.md). The original prompt outside this repository is unchanged.
 
+The September 8 enhancement adds labeled navigation, study-card collections, selection actions, method previews, ZIP progress, inline folders, stable hyperlinks, attachment browsing, onboarding, AI Chat, eight optional themes, journal calendars, and Discover categories/popularity. See [delivery and preservation details](docs/enhancements.md) and [how to connect and manage Supabase public research](docs/supabase-management.md). The original app is retained on `master`, tagged `before-enhancements-20260908`, with a verified bundle and source ZIP outside the repository.
+
 **Status: runnable development application, not a production-certified release.** The local workspace works without credentials. Supabase authentication/storage, hosted background workers, live AI, and a full hosted restore require external configuration and verification. The [64-item acceptance checklist](docs/acceptance.md) records implementation, evidence, and remaining gaps without treating fixtures as live services.
 
 ## Start immediately
@@ -54,7 +56,7 @@ AI additionally requires server-only `AI_API_KEY`, `AI_MODEL`, and optionally `A
 
 ## Tests and verification
 
-Verified locally: clean `npm ci` (zero audit findings), **45 automated tests**, **9 Chromium browser journeys against the production build**, TypeScript, and production build/start. Light/Dark/Paper axe checks had zero violations in the inspected views. Live service and broader manual checks remain documented below.
+The original build had 45 automated tests and 9 browser journeys. The enhanced suite adds coverage for preservation, grouping, links, attachments, calendars, publication browsing, keyboard shortcuts, and onboarding. Current command results are recorded in [enhancement verification](docs/evidence/enhancement-verification.json). Dependencies are unchanged from the original clean install with zero audit findings. Live service and broader manual checks remain documented below.
 
 ```sh
 npm run typecheck

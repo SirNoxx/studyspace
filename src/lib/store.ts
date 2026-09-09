@@ -1,4 +1,5 @@
 "use client";
+import { normalizeWorkspace } from "./enhancements";
 import { openDB } from "idb";
 import type { Workspace } from "./model";
 import { emptyWorkspace } from "./model";
@@ -22,7 +23,9 @@ export async function loadLocal(sample = false) {
     w = sample ? sampleWorkspace() : emptyWorkspace();
     await db.put("workspaces", w, "demo");
   }
-  return w;
+  if (!(await db.get("workspaces", "before-enhancements:demo")))
+    await db.put("workspaces", w, "before-enhancements:demo");
+  return normalizeWorkspace(w);
 }
 export async function persistLocal(w: Workspace, expected: number) {
   validateWorkspace(w);

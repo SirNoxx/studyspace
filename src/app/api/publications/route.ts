@@ -74,32 +74,20 @@ export async function GET(request: Request) {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
-    const { data, error } = await adminClient()
-      .from("publications")
-      .select("id,current_version")
-      .eq("status", "published")
-      .eq("hidden", false)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const { data, error } = await adminClient().rpc("discover_publications", {
+      p_query: z
+        .string()
+        .max(500)
+        .parse(url.searchParams.get("q") ?? ""),
+      p_category: z
+        .string()
+        .max(100)
+        .parse(url.searchParams.get("category") ?? "all"),
+      p_sort: url.searchParams.get("sort") === "popular" ? "popular" : "newest",
+    });
     if (error) throw error;
-    const versionIds = (data ?? []).map((p) => p.current_version);
-    if (!versionIds.length) return Response.json({ publications: [] });
-    const { data: versions, error: e } = await adminClient()
-      .from("publication_versions")
-      .select("payload")
-      .in("id", versionIds);
-    if (e) throw e;
-    const q = (url.searchParams.get("q") ?? "").toLowerCase();
     return Response.json(
-      {
-        publications: (versions ?? [])
-          .map((v) => v.payload)
-          .filter((p) =>
-            (p.title + " " + p.description + " " + p.author + " " + p.topics)
-              .toLowerCase()
-              .includes(q),
-          ),
-      },
+      { publications: data ?? [] },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (e) {
@@ -146,20 +134,18 @@ export async function POST(request: Request) {
         source.snapshot.notes.length > 50 ||
         source.snapshot.attachments?.length
       ) {
-        const { error } = await db
-          .from("jobs")
-          .upsert(
-            {
-              owner_id: user.id,
-              kind: "copy",
-              payload: {
-                publicationId: input.publicationId,
-                copyId: input.idempotencyKey,
-              },
-              idempotency_key: input.idempotencyKey,
+        const { error } = await db.from("jobs").upsert(
+          {
+            owner_id: user.id,
+            kind: "copy",
+            payload: {
+              publicationId: input.publicationId,
+              copyId: input.idempotencyKey,
             },
-            { onConflict: "owner_id,idempotency_key", ignoreDuplicates: true },
-          );
+            idempotency_key: input.idempotencyKey,
+          },
+          { onConflict: "owner_id,idempotency_key", ignoreDuplicates: true },
+        );
         if (error) throw error;
         const { data: job, error: lookupError } = await db
           .from("jobs")

@@ -92,13 +92,11 @@ export async function POST(request: Request) {
         if ((await sha256(bytes)) !== publicFile.hash)
           throw new Error("Attachment checksum mismatch.");
         const key = `${user.id}/copy-updates/${copy.id}/${upstream.snapshot.id}/${publicFile.id}`;
-        const upload = await db.storage
-          .from("attachments")
-          .upload(key, bytes, {
-            contentType: publicFile.mime,
-            upsert: true,
-            cacheControl: "0",
-          });
+        const upload = await db.storage.from("attachments").upload(key, bytes, {
+          contentType: publicFile.mime,
+          upsert: true,
+          cacheControl: "0",
+        });
         if (upload.error) throw upload.error;
         asset = { ...publicFile, id: uid(), key, createdAt: now() };
       }
