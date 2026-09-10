@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "applicationSourceCommit": "e97683c5d9438c17b7b51bde5a1a74074112c122",
+  "unitTests": 114,
+  "desktopUnitTests": 9,
+  "productionBrowserTests": 19,
+  "browserRunNote": "18 passed initially; one runtime request failed with Chromium net::ERR_NO_BUFFER_SPACE during concurrent Windows packaging. The failed JavaScript repeat-run test passed with one worker after packaging completed.",
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "packagedSmoke": "passed: startup, renderer isolation, settings, save-before-close, restart persistence, introduction persistence, updater configuration",
+  "startupSmoke": {
+    "normal": {
+      "appReadyMs": 54,
+      "windowCreatedMs": 128,
+      "loadingPageMs": 230,
+      "localServerReadyMs": 1233,
+      "workspaceLoadedMs": 1790
+    },
+    "slow": {
+      "appReadyMs": 50,
+      "windowCreatedMs": 110,
+      "loadingPageMs": 192,
+      "localServerReadyMs": 6473,
+      "workspaceLoadedMs": 6997
+    },
+    "closeDuringStartup": "Closed cleanly before starting the server",
+    "portConflict": "Visible, closable error screen",
+    "cloud": "Opened cloud with local port occupied; no local server startup"
+  },
+  "updaterTransport": "passed: actual installer downloaded into isolated cache, SHA512 verified, corrupt manifest rejected; installer never executed",
+  "environmentFilesInBundle": 0,
+  "signing": "unsigned",
+  "installer": "Studyspace-Setup-2.0.0-x64.exe",
+  "installerBytes": 151690133,
+  "sha256": "16857a40382408e2f1fb5f1a8a1598849684e3d73fe2134ba7a53e152e961a7f",
+  "releaseUrl": "https://github.com/SirNoxx/studyspace/releases/tag/v2.0.0"
+}

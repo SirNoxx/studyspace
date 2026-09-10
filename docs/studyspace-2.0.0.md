@@ -36,3 +36,7 @@ Download `Studyspace-Setup-2.0.0-x64.exe` from the GitHub release. The installer
 The release includes the installer, its differential-update blockmap, `latest.yml`, and `SHA256SUMS.txt`. Automatic updates require the complete matching artifact set. Windows signing is not configured, so this installer is unsigned.
 
 The native window shows a bundled loading screen while the workspace starts. Startup failures remain visible and closable.
+
+## Release validation
+
+TypeScript, 114 unit tests, 9 desktop tests, and 19 production browser checks passed. Packaged startup, save-before-close, restart persistence, renderer isolation, settings, and updater checks passed. The updater test downloaded the actual installer and rejected a corrupt checksum without installing it. One initial browser request exhausted Windows buffers during concurrent packaging; its isolated rerun passed. See [release evidence](evidence/studyspace-2.0.0.json).
