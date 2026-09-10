@@ -2,7 +2,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Sparkles } from "lucide-react";
 import type { AppContext } from "../WorkspaceApp";
-import { parseQuiz } from "@/lib/quiz";
+import { parseStudyCards } from "@/lib/quiz";
 export default function AISuggestion({
   ctx,
   kind,
@@ -92,7 +92,7 @@ export default function AISuggestion({
                 "The suggestion was interrupted. Your manual draft is unchanged.",
               );
             if (kind === "card") {
-              const card = parseQuiz(output)[0];
+              const card = parseStudyCards(output)[0];
               onResult(card.question, card.answer);
             } else onResult(passage, output);
             setStatus("Suggestion ready. Edit and confirm it before saving.");

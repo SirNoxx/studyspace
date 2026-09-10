@@ -9,6 +9,7 @@ import Editor from "./Editor";
 import Markdown from "./Markdown";
 import { IconButton, Modal } from "./ui";
 import JournalTemplates from "./JournalTemplates";
+import { ModulesButton } from "./ModuleGallery";
 
 export default function JournalEditor({
   ctx,
@@ -21,6 +22,7 @@ export default function JournalEditor({
 }) {
   const [mode, setMode] = useState<"live" | "source" | "reading">("live");
   const [templateId, setTemplateId] = useState("default");
+  const [appliedTemplateId, setAppliedTemplateId] = useState("default");
   const [library, setLibrary] = useState<"saved" | "public" | null>(null);
   const [pending, setPending] = useState<JournalTemplate | null>(null);
   const kind = note.kind === "dream" ? "dream" : "journal";
@@ -56,6 +58,8 @@ export default function JournalEditor({
       );
     }, "Template applied. Previous text is retained in version history.");
     setPending(null);
+    setTemplateId(template.id);
+    setAppliedTemplateId(template.id);
     setMode("live");
   };
   const requestTemplate = (template: JournalTemplate) => {
@@ -108,6 +112,14 @@ export default function JournalEditor({
         }}
       />
       <div className="journal-template-bar">
+        <ModulesButton
+          onInsert={(text) => {
+            if (ctx.editor.current && mode !== "reading")
+              ctx.editor.current.insert(text);
+            else update({ body: note.body + text });
+            setMode("live");
+          }}
+        />
         <LayoutTemplate size={16} />
         <select
           aria-label="Journal template"
@@ -120,14 +132,16 @@ export default function JournalEditor({
             </option>
           ))}
         </select>
-        <button className="secondary" onClick={() => requestTemplate(chosen)}>
-          Apply template
+        {chosen.id !== appliedTemplateId && (
+          <button className="primary" onClick={() => requestTemplate(chosen)}>
+            Apply template
+          </button>
+        )}
+        <button className="secondary" onClick={() => setLibrary("saved")}>
+          <LayoutTemplate size={14} /> My templates
         </button>
-        <button className="text-button" onClick={() => setLibrary("saved")}>
-          My templates
-        </button>
-        <button className="text-button" onClick={() => setLibrary("public")}>
-          <Globe size={13} /> Public templates
+        <button className="secondary" onClick={() => setLibrary("public")}>
+          <Globe size={14} /> Browse templates
         </button>
         <button
           className="text-button"
@@ -163,6 +177,10 @@ export default function JournalEditor({
             handle={ctx.editor}
             onChange={(body) => update({ body })}
             onSelection={ctx.setSelection}
+            onChat={(text) => ctx.openChat(text, note.id)}
+            onBlockAction={(action, block) =>
+              ctx.blockAction?.(action, block, note.id)
+            }
             onDefinition={() => {}}
             onAttach={(files) => void ctx.attach(files)}
           />

@@ -1,0 +1,25 @@
+{
+  "baselinePackagedMs": {
+    "firstWindow": 6037,
+    "workspaceReady": 6565
+  },
+  "scenarios": {
+    "normal": {
+      "appReadyMs": 50,
+      "windowCreatedMs": 115,
+      "loadingPageMs": 209,
+      "localServerReadyMs": 1325,
+      "workspaceLoadedMs": 1775
+    },
+    "slow": {
+      "appReadyMs": 54,
+      "windowCreatedMs": 134,
+      "loadingPageMs": 238,
+      "localServerReadyMs": 6262,
+      "workspaceLoadedMs": 6712
+    },
+    "closeDuringStartup": "Closed cleanly before starting the server",
+    "portConflict": "Visible, closable error screen",
+    "cloud": "Opened cloud with local port occupied; no local server startup"
+  }
+}

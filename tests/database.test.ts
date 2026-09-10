@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
-import { readFile } from "node:fs/promises";
+import { createTestDatabase } from "./helpers/database";
 import { emptyWorkspace, uid } from "../src/lib/model";
 import { createNote } from "../src/lib/domain";
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -9,37 +9,7 @@ const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   M = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 let db: PGlite;
 beforeAll(async () => {
-  db = new PGlite();
-  await db.exec(
-    `create role anon;create role authenticated;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to anon,authenticated,service_role;grant execute on function auth.uid() to anon,authenticated,service_role;create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;create function storage.foldername(text) returns text[] language sql as $$select string_to_array($1,'/')$$;grant usage on schema storage to authenticated;grant select,insert,delete on storage.objects to authenticated;`,
-  );
-  const sql = (
-    await readFile(
-      new URL(
-        "../supabase/migrations/202609080001_workspace.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    )
-  ).replace("create extension if not exists pgcrypto;", "");
-  await db.exec(sql);
-  for (const migration of [
-    "202609080002_moderation.sql",
-    "202609080003_consistent_reads.sql",
-    "202609080004_public_assets.sql",
-    "202609080005_snapshot_identity.sql",
-    "202609080006_clarification_events.sql",
-    "202609080007_indexed_search.sql",
-    "202609080008_storage_lifecycle.sql",
-    "202609080009_discover_browsing.sql",
-    "202609090010_journal_templates.sql",
-  ])
-    await db.exec(
-      await readFile(
-        new URL("../supabase/migrations/" + migration, import.meta.url),
-        "utf8",
-      ),
-    );
+  db = await createTestDatabase();
   await db.query("insert into auth.users(id) values($1),($2),($3),($4)", [
     A,
     B,

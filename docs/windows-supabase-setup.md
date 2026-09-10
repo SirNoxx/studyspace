@@ -38,7 +38,7 @@ npx supabase@2.117.0 db push --dry-run
 npx supabase@2.117.0 db push
 ```
 
-A fresh project needs all nine checked-in migrations. Existing projects receive only pending migrations. Inspect the dry run and back up a populated project first. **Do not run `db reset` on existing user data.** The migrations configure tables, ownership rules, database functions, and private attachment/publication buckets. Keep row-level security enabled. See [Supabase migrations](https://supabase.com/docs/guides/local-development/database-migrations).
+A fresh project needs all twelve checked-in migrations. Project `nnlhqstucyjoioyraxpf` already has the complete set; see the [database setup and verification guide](public-database-setup.md). Existing projects receive only pending migrations. Inspect the dry run and back up a populated project first. **Do not run `db reset` on existing user data.** The migrations configure tables, ownership rules, database functions, and private attachment/publication buckets. Keep row-level security enabled. See [Supabase migrations](https://supabase.com/docs/guides/local-development/database-migrations).
 
 ### 3. Configure authentication and the worker
 

@@ -6,6 +6,7 @@ import {
   type LocalPublication,
 } from "../model";
 import { validateWorkspace } from "../domain";
+import { publicNameFromMetadata } from "../public-name";
 export async function loadWorkspace(owner: string): Promise<Workspace> {
   const db = adminClient();
   const { data: ws, error } = await db.rpc("read_workspace", {
@@ -14,6 +15,13 @@ export async function loadWorkspace(owner: string): Promise<Workspace> {
   if (error) throw error;
   if (!ws) {
     const initial = emptyWorkspace();
+    // Only initialize a new workspace. Existing public names and later edits win.
+    const { data: account, error: accountError } =
+      await db.auth.admin.getUserById(owner);
+    if (accountError) throw accountError;
+    initial.settings.displayName = publicNameFromMetadata(
+      account.user?.user_metadata,
+    );
     const { data, error } = await db.rpc("commit_workspace", {
       p_owner: owner,
       p_expected: 0,
@@ -48,15 +56,7 @@ export async function persistWorkspace(
   if (error) throw error;
   return Number(data);
 }
-export function assertSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (
-    origin &&
-    origin !== new URL(request.url).origin &&
-    origin !== process.env.NEXT_PUBLIC_APP_URL
-  )
-    throw new Error("ORIGIN_REJECTED");
-}
+export { assertRequestOrigin as assertSameOrigin } from "./same-origin";
 export function apiError(error: unknown) {
   const e = error as { message?: string; code?: string };
   const conflict =

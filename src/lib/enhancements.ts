@@ -1,4 +1,5 @@
 import { attachmentTargets } from "./markdown";
+import { separateQuickNotes } from "./quick-notes";
 import { findAttachment } from "./attachments";
 import {
   type Workspace,
@@ -39,6 +40,7 @@ export const extraThemes = [
   { id: "forest", label: "Forest", colors: ["#eff1e6", "#405e37", "#9bad83"] },
 ] as const;
 export function normalizeWorkspace(w: Workspace) {
+  w = separateQuickNotes(w);
   return {
     ...w,
     settings: {

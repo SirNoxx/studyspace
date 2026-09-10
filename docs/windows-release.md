@@ -12,12 +12,15 @@ npm test
 npm run desktop:test
 npm run desktop:build
 npm run desktop:smoke
+node desktop/scripts/startup-smoke.cjs
 npm run desktop:test-update
 ```
 
 The `desktop/release` directory contains a full NSIS installer, its differential-download blockmap, and `latest.yml`. `win-unpacked/Studyspace.exe` is also produced for verification. Build output is ignored by Git. The desktop process embeds the Next standalone server through Electron's utility process, serves it at a stable loopback origin, and displays it in a sandboxed renderer. Settings use a separate bundled page with a restricted, sender-validated IPC interface.
 
 The smoke test uses `desktop/.smoke` and a separate port/profile; it must never run against a person's real workspace. It verifies the packaged application, renderer isolation, immediate-close saving, persistence across process restarts, settings validation, and the packaged updater configuration. The update transport test downloads the actual release installer into an isolated cache, verifies its SHA512 digest, and checks that a corrupt manifest is rejected; it never executes the installer. An actual future installer upgrade requires a newer published release; initial-release checks cannot demonstrate a nonexistent future upgrade.
+
+The startup smoke test also checks the bundled loading page before server readiness, simulated slow startup, closing during startup, a visible error when the local port is occupied, and opening the cloud workspace without starting the local server. Timings are recorded in `docs/evidence/desktop-startup.json`. Set `STUDYSPACE_TEST_EXE` to test a packaged executable built in a separate credential-free folder.
 
 ## Publish a new version
 

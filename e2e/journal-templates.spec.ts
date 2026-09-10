@@ -19,6 +19,9 @@ test("journal entries stay in the journal with ordinal dates and reusable templa
   await expect(section).toBeVisible();
   const title = page.getByLabel("Journal entry title", { exact: true });
   await expect(title).toHaveValue("September 9th, 2026");
+  await expect(
+    section.getByRole("button", { name: "Apply template", exact: true }),
+  ).toHaveCount(0);
   await title.press("Enter");
   const editor = section.getByRole("textbox", { name: "Markdown editor" });
   await expect(editor).toBeFocused();
@@ -47,6 +50,9 @@ test("journal entries stay in the journal with ordinal dates and reusable templa
     .click();
   await expect(editor).toContainText("My private entry");
   await expect(editor).toContainText("Gratitude");
+  await expect(
+    section.getByRole("button", { name: "Apply template", exact: true }),
+  ).toHaveCount(0);
   await page
     .getByLabel("Journal template", { exact: true })
     .selectOption({ label: "Evening reflection" });
@@ -103,7 +109,7 @@ test("public template browser handles outages and imports explicit public conten
     }),
   );
   await page
-    .getByRole("button", { name: "Public templates", exact: true })
+    .getByRole("button", { name: "Browse templates", exact: true })
     .click();
   await expect(page.getByRole("alert")).toContainText(
     "public service unavailable",
@@ -129,7 +135,11 @@ test("public template browser handles outages and imports explicit public conten
   );
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Fixture author");
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page
+    .locator(".journal-template-grid article")
+    .filter({ hasText: "Public reflection fixture" })
+    .getByRole("button", { name: "Preview", exact: true })
+    .click();
   await expect(page.getByRole("dialog").last()).toContainText(
     "A reusable public prompt",
   );

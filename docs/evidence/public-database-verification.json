@@ -1,0 +1,49 @@
+{
+  "verifiedOn": "2026-09-09",
+  "projectRef": "nnlhqstucyjoioyraxpf",
+  "databaseInitiallyEmpty": true,
+  "migrationsApplied": [
+    "202609080001_workspace",
+    "202609080002_moderation",
+    "202609080003_consistent_reads",
+    "202609080004_public_assets",
+    "202609080005_snapshot_identity",
+    "202609080006_clarification_events",
+    "202609080007_indexed_search",
+    "202609080008_storage_lifecycle",
+    "202609080009_discover_browsing",
+    "202609090010_journal_templates",
+    "20260909220443_public_access_hardening",
+    "20260909220447_public_data_integrity"
+  ],
+  "historyMatchesLocalVersions": true,
+  "publicApplicationTables": 18,
+  "allApplicationTablesHaveRls": true,
+  "privateBuckets": ["attachments", "publication-assets"],
+  "hostedChecks": {
+    "supabase/verify.sql": "passed",
+    "supabase/checks/public-smoke.sql": "passed; transaction rolled back",
+    "authUsersAfterSmoke": 0,
+    "workspacesAfterSmoke": 0,
+    "publicationsAfterSmoke": 0
+  },
+  "localChecks": {
+    "npm test": { "passed": 73, "failed": 0, "files": 10 },
+    "npm run typecheck": "passed",
+    "git diff --check": "passed"
+  },
+  "reviewedAdvisorFindings": {
+    "publicDefinerHelpers": ["is_moderator()", "public_available(uuid)"],
+    "serverOnlyTablesWithoutClientPolicies": ["rate_limits", "storage_tombstones"],
+    "compositeFkIndexNotices": "Three notices use the opposite column order from existing owner-first equality indexes; retained existing indexes.",
+    "unusedIndexes": "Expected on a newly initialized database; reassess with production statistics."
+  },
+  "notPerformed": [
+    "Auth sign-in and Storage HTTP integration tests",
+    "Web or worker deployment",
+    "Production email configuration",
+    "Live AI requests",
+    "Hosted backup/restore rehearsal"
+  ],
+  "applicationEnvironmentConfigured": false
+}

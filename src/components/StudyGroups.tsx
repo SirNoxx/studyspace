@@ -26,7 +26,10 @@ export default function StudyGroups({
   const groups = ctx.w.settings.cardGroups ?? [],
     selected = groups.find((g) => g.id === value);
   const destinations = ctx.w.containers.filter(
-    (c) => !c.trashed && ancestry(ctx.w, c.id).every((p) => !p.trashed),
+    (c) =>
+      c.system !== "quick" && c.system !== "pinned" &&
+      !c.trashed &&
+      ancestry(ctx.w, c.id).every((p) => !p.trashed),
   );
   const path = (id: string) =>
     ancestry(ctx.w, id)

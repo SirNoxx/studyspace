@@ -1,0 +1,11 @@
+# Studyspace 1.0.2
+
+- The desktop creates its window immediately and paints a bundled loading page before starting the local workspace server. Connected workspaces skip the local server entirely. Startup failures leave a visible, closable error screen. The existing save-before-close protection remains in place.
+- Sign-in and signup have an accessible password visibility button. Signup asks for a public username (a display name, not a unique login handle). New workspaces initialize their public attribution from that name; existing profile edits are preserved.
+- The welcome walkthrough follows the navigation, explorer, collection tree, writing area, and inspector. A dimmed, blurred surround leaves its current target clear. It covers collection focus, Markdown import, and writing shortcuts, and repositions on resize and scrolling.
+- Journal template actions have bordered buttons and a “Browse templates” label. “Apply template” appears only for a newly selected template and disappears after applying it. Existing append/replace and version-history protection remains.
+- Drag collections, folders, and files to reorder them. The top and bottom quarters of a container row show insertion lines; the middle highlights nesting into it. Files have before/after zones. Invalid cycles and loose root files are rejected. Dropping switches the explorer to manual sort and persists explicit item order; “Move to…” remains available in the context menu.
+
+The Windows installer is built separately without `.env` files. The app ID, local origin, and user-data directory are unchanged. Close the current desktop app after its notes finish saving before running the new installer. Local build artifacts are not a published GitHub release.
+
+Validation: 79 unit tests, 9 desktop unit tests, 13 browser tests, TypeScript, the production build, and both packaged smoke suites passed. In one local packaged run, the native window was created at 115 ms, the loading page finished at 209 ms, and the workspace document loaded at 1,775 ms. These are development-machine observations, not cold-start guarantees; baseline window availability was measured externally with Playwright, while the new detailed stages use the main-process clock. The old packaged first window appeared at 6,037 ms. See the evidence JSON files for details.

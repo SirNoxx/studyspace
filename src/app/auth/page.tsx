@@ -1,11 +1,18 @@
 "use client";
 import { useState } from "react";
-import { BookOpen, ArrowRight } from "lucide-react";
+import { BookOpen, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { browserClient } from "@/lib/supabase/browser";
+import { usernameSchema } from "@/lib/public-name";
 export default function Auth() {
   const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin"),
     [message, setMessage] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [showPassword, setShowPassword] = useState(false);
+  const changeMode = (nextMode: typeof mode) => {
+    setMode(nextMode);
+    setShowPassword(false);
+    setMessage("");
+  };
   return (
     <main className="auth-page">
       <a className="brand" href="/">
@@ -30,6 +37,14 @@ export default function Auth() {
             setMessage("");
             const data = new FormData(e.currentTarget);
             try {
+              const username =
+                mode === "signup"
+                  ? usernameSchema.safeParse(data.get("username"))
+                  : null;
+              if (username && !username.success) {
+                setMessage(username.error.issues[0].message);
+                return;
+              }
               const client = browserClient();
               const email = String(data.get("email")),
                 password = String(data.get("password"));
@@ -55,6 +70,10 @@ export default function Auth() {
                   email,
                   password,
                   options: {
+                    data: {
+                      username: username!.data,
+                      display_name: username!.data,
+                    },
                     emailRedirectTo:
                       location.origin +
                       "/auth/callback?next=" +
@@ -79,6 +98,25 @@ export default function Auth() {
             }
           }}
         >
+          {mode === "signup" && (
+            <div className="auth-username-field">
+              <label htmlFor="signup-username">Username</label>
+              <input
+                id="signup-username"
+                name="username"
+                autoComplete="nickname"
+                minLength={2}
+                maxLength={40}
+                required
+                placeholder="Your public name"
+                aria-describedby="username-hint"
+              />
+              <small id="username-hint" className="field-hint">
+                This name appears on your shared study material and public
+                profile.
+              </small>
+            </div>
+          )}
           <label>
             Email
             <input
@@ -90,18 +128,35 @@ export default function Auth() {
             />
           </label>
           {mode !== "reset" && (
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                autoComplete={
-                  mode === "signup" ? "new-password" : "current-password"
-                }
-                minLength={8}
-                required
-              />
-            </label>
+            <div className="auth-password-field">
+              <label htmlFor="auth-password">Password</label>
+              <div className="password-input">
+                <input
+                  id="auth-password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete={
+                    mode === "signup" ? "new-password" : "current-password"
+                  }
+                  minLength={8}
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  aria-controls="auth-password"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} aria-hidden="true" />
+                  ) : (
+                    <Eye size={18} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+            </div>
           )}
           <button className="primary" disabled={busy}>
             {busy
@@ -117,13 +172,16 @@ export default function Auth() {
         <p role="status">{message}</p>
         <div className="auth-actions">
           <button
-            onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
+            disabled={busy}
+            onClick={() => changeMode(mode === "signup" ? "signin" : "signup")}
           >
             {mode === "signup"
               ? "Already have an account?"
               : "Create an account"}
           </button>
-          <button onClick={() => setMode("reset")}>Forgot password?</button>
+          <button disabled={busy} onClick={() => changeMode("reset")}>
+            Forgot password?
+          </button>
         </div>
         <a className="muted" href="/demo">
           Explore the local demo

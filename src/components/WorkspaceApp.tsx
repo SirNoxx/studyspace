@@ -71,6 +71,11 @@ import {
   Paperclip,
 } from "lucide-react";
 import WorkspaceManager from "./WorkspaceManager";
+import { MessageBadge, ProfileAvatar } from "./social/Messages";
+import { ModulesButton } from "./ModuleGallery";
+import { moduleText } from "@/lib/modules";
+import { pinNote, unpinNote, isPinnedNote } from "@/lib/pinned-notes";
+import { moveToQuickNotes } from "@/lib/quick-notes";
 import {
   type Workspace,
   type Note,
@@ -107,7 +112,7 @@ import { sampleWorkspace } from "@/lib/demo";
 import { resolveLink } from "@/lib/markdown";
 import { exportWorkspace, downloadBytes } from "@/lib/transfer";
 import { browserClient } from "@/lib/supabase/browser";
-import { IconButton, SymbolIcon, Menu, Empty } from "./ui";
+import { IconButton, SymbolIcon, Menu, Empty, Modal } from "./ui";
 import Markdown from "./Markdown";
 import type { EditorHandle } from "./Editor";
 import TextContextMenu from "./TextContextMenu";
@@ -119,9 +124,24 @@ import {
   toolDescriptions,
 } from "./WorkspaceEnhancements";
 import { normalizeWorkspace } from "@/lib/enhancements";
+import {
+  treeItems,
+  treeDestination,
+  dropTreeItem,
+  type DropPosition,
+} from "@/lib/tree";
 import Inspector from "./Inspector";
 import WorkspaceViews from "./WorkspaceViews";
 import SelectionToolbar from "./SelectionToolbar";
+import NoteTranscripts, { useTranscriptImport } from "./NoteTranscripts";
+import SideNotePane from "./SideNotePane";
+import BlockDestination from "./BlockDestination";
+import {
+  codeFence,
+  studyCodeBlocks,
+  type StudyCodeBlock,
+  type BlockAction,
+} from "@/lib/code-blocks";
 const Editor = dynamic(() => import("./Editor"), {
   ssr: false,
   loading: () => <div className="muted">Opening editor…</div>,
@@ -139,6 +159,11 @@ export type DialogState = {
   [key: string]: unknown;
 } | null;
 export interface AppContext {
+  blockAction?: (
+    action: BlockAction,
+    block: StudyCodeBlock,
+    noteId: string,
+  ) => void;
   w: Workspace;
   mutate: Mutate;
   demo: boolean;
@@ -150,7 +175,9 @@ export interface AppContext {
   addNote: (parentId?: string) => void;
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
-  openChat: () => void;
+  openChat: (passage?: string, noteId?: string) => void;
+  chatSelection?: { id: string; text: string; noteId: string };
+  clearChatSelection: () => void;
   openJournalNote: (id: string) => void;
   setSelection: (text: string) => void;
   toast: (message: string) => void;
@@ -158,7 +185,9 @@ export interface AppContext {
   signOut: () => Promise<void>;
   selection: string;
   editor: React.MutableRefObject<EditorHandle | null>;
-  attach: (files: File[]) => Promise<void>;
+  attach: (files: File[], noteId?: string) => Promise<void>;
+  importYoutube?: (url: string, noteId: string, retry?: boolean) => void;
+  pickStudyFolder?: (choose: (id: string) => void, cancel?: () => void) => void;
   exportData: (options?: {
     containerId?: string;
     noteId?: string;
@@ -167,11 +196,13 @@ export interface AppContext {
 }
 const ribbon = [
   { id: "collections", label: "Collections", icon: Library },
+  { id: "quick-notes", label: "Quick notes", icon: Feather },
   { id: "search", label: "Search", icon: Search },
   { id: "bookmarks", label: "Bookmarks", icon: Bookmark },
   { id: "journal", label: "Journal", icon: JournalIcon },
   { id: "review", label: "Review", icon: Layers },
   { id: "discover", label: "Discover", icon: Compass },
+  { id: "shared", label: "Shared collections", icon: Globe },
 ];
 const inspectorTabs = [
   { id: "dictionary", label: "Dictionary", icon: BookA },
@@ -192,6 +223,31 @@ export default function WorkspaceApp({
   localKey?: string;
   onWorkspaceSwitch?: (id: string) => void;
 }) {
+  const draggedTreeId = useRef<string | null>(null);
+  const [blockDestination, setBlockDestination] = useState<{
+    block: StudyCodeBlock;
+    noteId: string;
+  } | null>(null);
+  const [blockBrowser, setBlockBrowser] = useState<
+    "whiteboard" | "code" | null
+  >(null);
+  const [rightNoteId, setRightNoteId] = useState("");
+  const [noteNavigation, setNoteNavigation] = useState<
+    Record<"left" | "right", { ids: string[]; index: number }>
+  >({ left: { ids: [], index: -1 }, right: { ids: [], index: -1 } });
+  const [studyFolderPicker, setStudyFolderPicker] = useState<{
+    choose: (id: string) => void;
+    cancel?: () => void;
+  } | null>(null);
+  const [activePane, setActivePane] = useState<"left" | "right">("left");
+  const [rightSelection, setRightSelection] = useState("");
+  const rightEditor = useRef<EditorHandle | null>(null);
+  const [chatSelection, setChatSelection] =
+    useState<AppContext["chatSelection"]>();
+  const [treeDrop, setTreeDrop] = useState<{
+    id: string;
+    position: DropPosition;
+  } | null>(null);
   const [w, setW] = useState<Workspace | null>(null),
     wRef = useRef<Workspace | null>(null),
     savedBase = useRef<Workspace | null>(null),
@@ -200,7 +256,7 @@ export default function WorkspaceApp({
     [tabs, setTabs] = useState<string[]>([]),
     [pinned, setPinned] = useState<string[]>([]),
     [closedTabs, setClosedTabs] = useState<string[]>([]),
-    [focus, setFocusState] = useState<string | null>(null),
+    [focus, commitFocus] = useState<string | null>(null),
     [expanded, setExpanded] = useState<string[]>([]),
     [view, setViewState] = useState("collections"),
     [inspector, setInspector] = useState("dictionary"),
@@ -289,6 +345,11 @@ export default function WorkspaceApp({
     }
     setDialogState(value);
   };
+  useLayoutEffect(() => {
+    document
+      .querySelector<HTMLElement>(".tabs .note-tab.current")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId, tabs.length]);
   const definitionsForNote = useMemo(
     () => (w && activeContainer ? contextDefinitions(w, activeContainer) : []),
     [w?.definitions, w?.containers, activeContainer],
@@ -302,29 +363,138 @@ export default function WorkspaceApp({
     setViewState(v);
     if (innerWidth < 800) setLeft(false);
     history.pushState(
-      {},
+      { ...history.state, studyspaceFocus: focus },
       "",
       `/${demo ? "demo" : "w"}/${v === "collections" ? "" : v}`,
     );
   };
+  const collectionFocus = (id: string | null) =>
+    id && wRef.current
+      ? (ancestry(wRef.current, id)
+          .reverse()
+          .find(
+            (c) =>
+              c.kind !== "folder" &&
+              c.system !== "quick" &&
+              c.system !== "pinned" &&
+              !c.trashed,
+          )?.id ?? null)
+      : null;
+  const setFocusState = (id: string | null) => commitFocus(collectionFocus(id));
   const setFocus = (id: string | null) => {
+    if (id && wRef.current) {
+      const path = ancestry(wRef.current, id).map((c) => c.id);
+      setExpanded((old) => [...new Set([...old, ...path])]);
+    }
+    id = collectionFocus(id);
+    if (id === focus && view === "collections") return;
+    const previous = {
+      url: location.pathname + location.search + location.hash,
+      focus,
+      view,
+      activeId,
+      expanded,
+      scroll: document.querySelector(".tree-scroll")?.scrollTop ?? 0,
+    };
+    history.replaceState({ ...history.state, studyspaceFocus: focus }, "");
     setFocusState(id);
     setViewState("collections");
     if (id) setExpanded((old) => [...new Set([...old, id])]);
     history.pushState(
-      {},
+      {
+        ...history.state,
+        studyspaceFocus: id,
+        studyspaceFocusReturn: id
+          ? [
+              ...(history.state?.studyspaceFocusReturn ?? []).slice(-49),
+              previous,
+            ]
+          : [],
+      },
       "",
       `/${demo ? "demo" : "w"}${id ? "/collection/" + id : ""}`,
     );
   };
+  const returnFromCollection = () => {
+    const trail = history.state?.studyspaceFocusReturn ?? [];
+    const previous = trail.at(-1);
+    const prefix = `/${demo ? "demo" : "w"}`;
+    const current = wRef.current?.containers.find((c) => c.id === focus);
+    // Old bookmarks have no navigation trail: return to the enclosing collection.
+    const parent = collectionFocus(current?.parentId ?? null);
+    const validPrevious =
+      previous &&
+      (previous.url === prefix ||
+        previous.url.startsWith(prefix + "/") ||
+        previous.url.startsWith(prefix + "?"));
+    const destination = validPrevious
+      ? collectionFocus(previous.focus)
+      : parent;
+    setFocusState(destination);
+    setViewState(validPrevious ? previous.view : "collections");
+    if (
+      validPrevious &&
+      wRef.current?.notes.some((n) => n.id === previous.activeId && !n.trashed)
+    ) {
+      setActiveId(previous.activeId);
+      setTabs((tabs) => [...new Set([...tabs, previous.activeId])]);
+    }
+    if (validPrevious) setExpanded(previous.expanded);
+    else if (focus && wRef.current) {
+      const path = ancestry(wRef.current, focus).map((c) => c.id);
+      setExpanded((old) => [...new Set([...old, ...path])]);
+    }
+    history.pushState(
+      {
+        ...history.state,
+        studyspaceFocus: destination,
+        studyspaceFocusReturn: validPrevious ? trail.slice(0, -1) : [],
+      },
+      "",
+      validPrevious
+        ? previous.url
+        : prefix + (destination ? "/collection/" + destination : ""),
+    );
+    requestAnimationFrame(() => {
+      const tree = document.querySelector(".tree-scroll");
+      if (tree) tree.scrollTop = validPrevious ? previous.scroll : 0;
+    });
+  };
   const openNote = useCallback(
-    (id: string, newTab = true) => {
+    (
+      id: string,
+      newTab = true,
+      target: "left" | "right" = activePane,
+      recordHistory = true,
+    ) => {
       if (renderTimer.current) {
         clearTimeout(renderTimer.current);
         renderTimer.current = null;
         setW(wRef.current);
       }
       if (!wRef.current?.notes.some((n) => n.id === id && !n.trashed)) return;
+      const pane = target === "right" && rightNoteId ? "right" : "left";
+      setActivePane(pane);
+      if (recordHistory)
+        setNoteNavigation((old) => {
+          const current = pane === "left" ? activeId : rightNoteId;
+          const trail =
+            old[pane].ids[old[pane].index] === current
+              ? old[pane].ids.slice(0, old[pane].index + 1)
+              : current
+                ? [current]
+                : [];
+          if (trail.at(-1) !== id) trail.push(id);
+          const ids = trail.slice(-100);
+          return { ...old, [pane]: { ids, index: ids.length - 1 } };
+        });
+      if (pane === "right") {
+        setRightNoteId(id);
+        setRightSelection("");
+        setViewState("collections");
+        if (innerWidth < 800) setLeft(false);
+        return;
+      }
       if (scroller.current)
         scrolls.current.set(activeId, scroller.current.scrollTop);
       setActiveId(id);
@@ -338,13 +508,17 @@ export default function WorkspaceApp({
       setViewState("collections");
       setSelection("");
       if (innerWidth < 800) setLeft(false);
-      history.pushState({}, "", `/${demo ? "demo" : "w"}/note/${id}`);
+      history.pushState(
+        { ...history.state },
+        "",
+        `/${demo ? "demo" : "w"}/note/${id}`,
+      );
       requestAnimationFrame(() => {
         if (scroller.current)
           scroller.current.scrollTop = scrolls.current.get(id) ?? 0;
       });
     },
-    [activeId, demo],
+    [activeId, rightNoteId, activePane, demo],
   );
   useEffect(() => {
     let cancelled = false;
@@ -383,7 +557,39 @@ export default function WorkspaceApp({
           setLeftWidth(nav.leftWidth ?? 276);
           setRightWidth(nav.rightWidth ?? 318);
           setPinned(nav.pinned ?? []);
+          setRightNoteId(
+            state.notes.some((n) => n.id === nav.rightNoteId && !n.trashed)
+              ? nav.rightNoteId
+              : "",
+          );
+          if (state.notes.some((n) => n.id === nav.rightNoteId && !n.trashed)) {
+            setRight(false);
+            if (nav.activePane === "right") setActivePane("right");
+          }
+          if (nav.noteNavigation)
+            setNoteNavigation((old) => {
+              const next = { ...old };
+              for (const pane of ["left", "right"] as const) {
+                const trail = nav.noteNavigation[pane];
+                if (
+                  Array.isArray(trail?.ids) &&
+                  trail.ids.length <= 100 &&
+                  trail.ids.every((id: unknown) => typeof id === "string") &&
+                  Number.isInteger(trail.index)
+                )
+                  next[pane] = {
+                    ids: trail.ids,
+                    index: Math.min(
+                      trail.ids.length - 1,
+                      Math.max(-1, trail.index),
+                    ),
+                  };
+              }
+              return next;
+            });
         }
+        if (history.state && "studyspaceFocus" in history.state)
+          setFocusState(history.state.studyspaceFocus);
         const path = location.pathname.split("/");
         if (path[2] === "note" && state.notes.some((n) => n.id === path[3])) {
           setActiveId(path[3]);
@@ -539,11 +745,34 @@ export default function WorkspaceApp({
     void localDB().then((db) =>
       db.put(
         "navigation",
-        { focus, expanded, tabs, activeId, leftWidth, rightWidth, pinned },
+        {
+          focus,
+          expanded,
+          tabs,
+          activeId,
+          rightNoteId,
+          activePane,
+          noteNavigation,
+          leftWidth,
+          rightWidth,
+          pinned,
+        },
         account + ":layout",
       ),
     );
-  }, [focus, expanded, tabs, activeId, leftWidth, rightWidth, pinned, account]);
+  }, [
+    focus,
+    expanded,
+    tabs,
+    activeId,
+    rightNoteId,
+    activePane,
+    noteNavigation,
+    leftWidth,
+    rightWidth,
+    pinned,
+    account,
+  ]);
   useEffect(() => {
     if (!w) return;
     const media = matchMedia("(prefers-color-scheme: dark)");
@@ -562,6 +791,9 @@ export default function WorkspaceApp({
   useEffect(() => {
     const back = () => {
       const parts = location.pathname.split("/");
+      if (history.state && "studyspaceFocus" in history.state)
+        setFocusState(history.state.studyspaceFocus);
+      else if (!parts[2]) setFocusState(null);
       if (parts[2] === "note") {
         setActiveId(parts[3]);
         setTabs((t) => [...new Set([...t, parts[3]])]);
@@ -641,13 +873,39 @@ export default function WorkspaceApp({
     };
   }, [dialog, zen, persist, activeId, view]);
   const active = w?.notes.find((n) => n.id === activeId && !n.trashed),
-    focused = w?.containers.find((c) => c.id === focus && !c.trashed),
+    rightNote = w?.notes.find((n) => n.id === rightNoteId && !n.trashed),
+    focused = w?.containers.find(
+      (c) =>
+        c.id === focus &&
+        c.system !== "quick" &&
+        c.system !== "pinned" &&
+        !c.trashed,
+    ),
     activeRoot = active && w ? rootOf(w, active.containerId) : undefined;
   const closeTab = (id: string) => {
     setClosedTabs((old) => [...old, id]);
     const next = tabs.filter((t) => t !== id);
     setTabs(next);
     if (activeId === id) setActiveId(next.at(-1) ?? "");
+  };
+  const historyTarget = (pane: "left" | "right", direction: -1 | 1) => {
+    const trail = noteNavigation[pane];
+    if (trail.ids[trail.index] !== (pane === "left" ? activeId : rightNoteId))
+      return -1;
+    for (
+      let i = trail.index + direction;
+      i >= 0 && i < trail.ids.length;
+      i += direction
+    )
+      if (w?.notes.some((n) => n.id === trail.ids[i] && !n.trashed)) return i;
+    return -1;
+  };
+  const navigateNote = (pane: "left" | "right", direction: -1 | 1) => {
+    const index = historyTarget(pane, direction);
+    if (index < 0) return;
+    const id = noteNavigation[pane].ids[index];
+    setNoteNavigation((old) => ({ ...old, [pane]: { ...old[pane], index } }));
+    openNote(id, true, pane, false);
   };
   const addNote = (parentId?: string) => {
     let id = "";
@@ -808,8 +1066,8 @@ export default function WorkspaceApp({
       toast((e as Error).message);
     }
   };
-  const attach = async (files: File[]) => {
-    const n = wRef.current?.notes.find((n) => n.id === activeId);
+  const attach = async (files: File[], noteId = activeId) => {
+    const n = wRef.current?.notes.find((n) => n.id === noteId);
     if (!n) {
       toast("Open a note before adding attachments.");
       return;
@@ -865,6 +1123,7 @@ export default function WorkspaceApp({
       }
     }
   };
+  const importYoutube = useTranscriptImport(() => wRef.current, mutate, toast);
   if (!w)
     return (
       <div className="loading-screen">
@@ -879,6 +1138,45 @@ export default function WorkspaceApp({
       </div>
     );
   const ctx: AppContext = {
+    blockAction: (action, block, noteId) => {
+      if (action === "add") setBlockDestination({ block, noteId });
+      if (action === "study") {
+        if (block.language === "whiteboard")
+          setDialog({
+            type: "review-card",
+            value: "Explain the ideas in " + (block.title || "this drawing"),
+            answer: codeFence(block),
+            sourceId: noteId,
+          });
+        else
+          ctx.openChat(
+            block.language === "module" ? moduleText(block.code) : block.code,
+            noteId,
+          );
+      }
+      if (action === "publish") {
+        let id = "";
+        mutate((w) => {
+          const source = w.notes.find((n) => n.id === noteId);
+          if (source)
+            id = createNote(w, source.containerId, {
+              title:
+                block.title ||
+                (block.language === "whiteboard"
+                  ? "Whiteboard"
+                  : "Code example"),
+              body: codeFence({ ...block, id: uid() }) + "\n",
+            }).id;
+        });
+        if (id) setDialog({ type: "publish", id });
+      }
+    },
+    pickStudyFolder: (choose, cancel) => {
+      setStudyFolderPicker({ choose, cancel });
+      setTreeQuery("");
+      setZen(false);
+      setLeft(true);
+    },
     openJournalNote: (id) => {
       flushRender();
       setActiveId(id);
@@ -886,8 +1184,17 @@ export default function WorkspaceApp({
       setSelection("");
       setViewState("journal");
     },
-    setSelection,
-    openChat: () => {
+    setSelection:
+      activePane === "right" && rightNote ? setRightSelection : setSelection,
+    chatSelection,
+    clearChatSelection: () => setChatSelection(undefined),
+    openChat: (passage, noteId) => {
+      if (passage)
+        setChatSelection({
+          id: uid(),
+          text: passage,
+          noteId: noteId ?? activeId,
+        });
       setZen(false);
       setRight(true);
       setInspector("ai");
@@ -932,23 +1239,105 @@ export default function WorkspaceApp({
       pending.current = true;
       await persist();
     },
-    active,
+    active: activePane === "right" && rightNote ? rightNote : active,
     focus,
     setFocus,
     openNote,
     setDialog,
     setView,
     toast,
-    selection,
-    editor,
+    selection: activePane === "right" && rightNote ? rightSelection : selection,
+    editor: activePane === "right" && rightNote ? rightEditor : editor,
     attach,
+    importYoutube,
     exportData,
   };
   const breadcrumb = active ? ancestry(w, active.containerId) : [];
+  const pinnedContainerId = w.containers.find((c) => c.system === "pinned")?.id;
+  const pinnedNotes = w.notes
+    .filter(
+      (n) => n.containerId === pinnedContainerId && !n.trashed && !n.archived,
+    )
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const collectionBlocks = focused
+    ? w.notes
+        .filter(
+          (n) =>
+            !n.trashed &&
+            !n.archived &&
+            inContainer(w, n.containerId, focused.id) &&
+            ancestry(w, n.containerId).every((c) => !c.trashed && !c.archived),
+        )
+        .flatMap((note) =>
+          studyCodeBlocks(note.body)
+            .filter((b) => b.language !== "module")
+            .map((block) => ({ note, block })),
+        )
+    : [];
+  const boardCount = collectionBlocks.filter(
+    (b) => b.block.language === "whiteboard",
+  ).length;
+  const codeCount = collectionBlocks.length - boardCount;
   const itemActions = (id: string) => {
     const c = w.containers.find((c) => c.id === id),
       n = w.notes.find((n) => n.id === id);
     return [
+      ...(n && n.kind !== "quick"
+        ? [
+            {
+              label: "Move to quick notes",
+              icon: Feather,
+              action: () =>
+                mutate((w) => moveToQuickNotes(w, id), "Moved to Quick notes."),
+            },
+          ]
+        : []),
+      ...(n
+        ? [
+            {
+              label: isPinnedNote(w, id) ? "Unpin note" : "Pin note",
+              icon: Pin,
+              action: () =>
+                mutate(
+                  (s) => {
+                    if (isPinnedNote(s, id)) unpinNote(s, id);
+                    else pinNote(s, id);
+                  },
+                  isPinnedNote(w, id)
+                    ? "Note restored to its previous location."
+                    : "Note moved to Pinned notes.",
+                ),
+            },
+            "separator" as const,
+          ]
+        : []),
+      ...(n
+        ? [
+            {
+              label: "Open file to the right",
+              icon: PanelRightOpen,
+              action: () => {
+                flushRender();
+                if (!active) {
+                  openNote(id);
+                  return;
+                }
+                if (rightNoteId) openNote(id, true, "right");
+                else {
+                  setRightNoteId(id);
+                  setNoteNavigation((old) => ({
+                    ...old,
+                    right: { ids: [id], index: 0 },
+                  }));
+                }
+                setRightSelection("");
+                setActivePane("right");
+                setViewState("collections");
+                setRight(false);
+              },
+            },
+          ]
+        : []),
       ...(c
         ? [
             { label: "New note", icon: FileText, action: () => addNote(id) },
@@ -1070,26 +1459,104 @@ export default function WorkspaceApp({
             },
           ]
         : []),
+      ...(c
+        ? [
+            "separator" as const,
+            {
+              label: `${w.notes.filter((n) => !n.trashed && inContainer(w, n.containerId, c.id) && ancestry(w, n.containerId).every((p) => !p.trashed)).length} files (including subfolders)`,
+              icon: FileText,
+              info: true,
+              action: () => {},
+            },
+            {
+              label: `Created ${new Date(c.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`,
+              icon: CalendarDays,
+              info: true,
+              action: () => {},
+            },
+          ]
+        : []),
     ];
   };
+  const treeDragProps = (id: string) => ({
+    "data-tree-id": id,
+    "data-drop-position": treeDrop?.id === id ? treeDrop.position : undefined,
+    onDragStart: (e: React.DragEvent<HTMLElement>) => {
+      if ((e.target as Element).closest("input")) {
+        e.preventDefault();
+        return;
+      }
+      e.stopPropagation();
+      draggedTreeId.current = id;
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("application/studyspace", id);
+    },
+    onDragEnd: () => {
+      draggedTreeId.current = null;
+      setTreeDrop(null);
+    },
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+        setTreeDrop(null);
+    },
+    onDragOver: (e: React.DragEvent<HTMLElement>) => {
+      const source = draggedTreeId.current;
+      if (!source) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = e.currentTarget.getBoundingClientRect();
+      const fraction = (e.clientY - rect.top) / rect.height;
+      const container = w.containers.some((c) => c.id === id);
+      const position: DropPosition =
+        fraction < (container ? 0.25 : 0.5)
+          ? "before"
+          : fraction > (container ? 0.75 : 0.5)
+            ? "after"
+            : "inside";
+      try {
+        treeDestination(w, source, id, position);
+        e.dataTransfer.dropEffect = "move";
+        setTreeDrop({ id, position });
+      } catch {
+        e.dataTransfer.dropEffect = "none";
+        setTreeDrop(null);
+      }
+      const scroll = e.currentTarget.closest(".tree-scroll");
+      if (scroll) {
+        const bounds = scroll.getBoundingClientRect();
+        if (e.clientY < bounds.top + 32) scroll.scrollTop -= 12;
+        if (e.clientY > bounds.bottom - 32) scroll.scrollTop += 12;
+      }
+    },
+    onDrop: (e: React.DragEvent<HTMLElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const source = draggedTreeId.current;
+      const destination = treeDrop;
+      setTreeDrop(null);
+      draggedTreeId.current = null;
+      if (!source || destination?.id !== id) return;
+      try {
+        const parent = treeDestination(w, source, id, destination.position);
+        mutate((s) => {
+          dropTreeItem(s, source, id, destination.position);
+        }, "Moved. Drag again to adjust the position.");
+        setSort("manual");
+        if (parent) setExpanded((items) => [...new Set([...items, parent])]);
+      } catch (error) {
+        toast((error as Error).message);
+      }
+    },
+  });
   const renderTree = (parentId: string | null, depth = 0): React.ReactNode => {
-    const containers = w.containers.filter(
-        (c) => c.parentId === parentId && !c.trashed && !c.archived,
-      ),
-      notes = w.notes.filter(
-        (n) =>
-          n.containerId === parentId &&
-          !n.trashed &&
-          !n.archived &&
-          (!treeQuery ||
-            n.title.toLowerCase().includes(treeQuery.toLowerCase())),
-      );
-    const sorted = <
-      T extends { title: string; createdAt: string; updatedAt: string },
-    >(
-      arr: T[],
-    ) =>
-      [...arr].sort((a, b) =>
+    const orderedItems = treeItems(w, parentId)
+      .filter(
+        (item) =>
+          "parentId" in item ||
+          !treeQuery ||
+          item.title.toLowerCase().includes(treeQuery.toLowerCase()),
+      )
+      .sort((a, b) =>
         sort === "name"
           ? a.title.localeCompare(b.title)
           : sort === "updated"
@@ -1098,63 +1565,275 @@ export default function WorkspaceApp({
               ? b.createdAt.localeCompare(a.createdAt)
               : 0,
       );
-    const orderedNotes = sorted(notes);
-    const renameIndex = orderedNotes.findIndex((n) => n.id === renaming?.id);
+    const renameIndex = orderedItems.findIndex((n) => n.id === renaming?.id);
     const page =
       renameIndex >= 0
         ? Math.floor(renameIndex / 200)
         : (treePages[parentId ?? "root"] ?? 0);
     return (
       <>
-        {sorted(containers).map((c) => (
-          <div key={c.id} className="tree-branch" role="none">
+        {orderedItems.slice(page * 200, (page + 1) * 200).map((item) => {
+          if ("parentId" in item) {
+            const c = item;
+            return (
+              <div key={c.id} className="tree-branch" role="none">
+                <div
+                  role="treeitem"
+                  aria-expanded={expanded.includes(c.id)}
+                  aria-selected={selected.includes(c.id)}
+                  tabIndex={0}
+                  className={
+                    "tree-row container-row " +
+                    (studyFolderPicker ? "study-pick-target " : "") +
+                    (c.parentId === null ? "root-row " : "") +
+                    (selected.includes(c.id) ? "selected " : "") +
+                    (w.settings.coloredRows ? "colored" : "")
+                  }
+                  style={
+                    {
+                      "--collection-color": c.color,
+                      "--folder-color": [
+                        "#a6b7d9",
+                        "#c9afcf",
+                        "#d8bd8a",
+                        "#93c8b5",
+                      ][(ancestry(w, c.id).length - 1) % 4],
+                      paddingLeft: 12 + depth * 17,
+                    } as CSSProperties
+                  }
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenu({
+                      x: Math.min(e.clientX, innerWidth - 230),
+                      y: Math.min(e.clientY, innerHeight - 450),
+                      id: c.id,
+                    });
+                  }}
+                  onClickCapture={(e) => {
+                    if (
+                      !studyFolderPicker ||
+                      (e.target as HTMLElement).closest(".disclosure")
+                    )
+                      return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (
+                      ancestry(w, c.id).some((p) => p.archived || p.trashed)
+                    ) {
+                      toast("Choose an active folder or collection.");
+                      return;
+                    }
+                    studyFolderPicker.choose(c.id);
+                    setStudyFolderPicker(null);
+                    if (innerWidth <= 1050) setLeft(false);
+                    toast("Study material: " + c.title);
+                  }}
+                  onKeyDownCapture={(e) => {
+                    if (
+                      !studyFolderPicker ||
+                      !["Enter", " "].includes(e.key) ||
+                      (e.target as HTMLElement).closest(".disclosure")
+                    )
+                      return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (ancestry(w, c.id).some((p) => p.archived || p.trashed))
+                      return;
+                    studyFolderPicker.choose(c.id);
+                    setStudyFolderPicker(null);
+                    if (innerWidth <= 1050) setLeft(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setExpanded((x) =>
+                        x.includes(c.id)
+                          ? x.filter((id) => id !== c.id)
+                          : [...x, c.id],
+                      );
+                    }
+                    if (e.key === "ArrowRight")
+                      setExpanded((x) => [...new Set([...x, c.id])]);
+                    if (e.key === "ArrowLeft")
+                      setExpanded((x) => x.filter((id) => id !== c.id));
+                    if (e.key === "F2")
+                      setDialog({ type: "rename", id: c.id, value: c.title });
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      const rows = [
+                        ...document.querySelectorAll<HTMLElement>(
+                          "[role=treeitem]",
+                        ),
+                      ];
+                      rows[
+                        rows.indexOf(e.currentTarget) +
+                          (e.key === "ArrowDown" ? 1 : -1)
+                      ]?.focus();
+                    }
+                  }}
+                  onClick={(e) => {
+                    if (
+                      (e.target as Element).closest(
+                        "button, input, [role=menu]",
+                      )
+                    )
+                      return;
+                    setExpanded((x) =>
+                      x.includes(c.id)
+                        ? x.filter((id) => id !== c.id)
+                        : [...x, c.id],
+                    );
+                  }}
+                  draggable={renaming?.id !== c.id}
+                  {...treeDragProps(c.id)}
+                >
+                  <button
+                    className="disclosure"
+                    aria-label={
+                      (expanded.includes(c.id) ? "Collapse " : "Expand ") +
+                      c.title
+                    }
+                    onClick={() =>
+                      setExpanded((x) =>
+                        x.includes(c.id)
+                          ? x.filter((id) => id !== c.id)
+                          : [...x, c.id],
+                      )
+                    }
+                  >
+                    {expanded.includes(c.id) ? (
+                      <ChevronDown size={13} />
+                    ) : (
+                      <ChevronRight size={13} />
+                    )}
+                  </button>
+                  <SymbolIcon
+                    name={c.kind === "folder" ? "folder" : c.icon}
+                    size={16}
+                  />
+                  {renaming?.id === c.id ? (
+                    renameField(
+                      c.id,
+                      c.kind === "folder" ? "Folder name" : "Collection name",
+                    )
+                  ) : (
+                    <button
+                      className="tree-title"
+                      aria-label={
+                        (studyFolderPicker
+                          ? "Select study material: "
+                          : expanded.includes(c.id)
+                            ? "Collapse "
+                            : "Expand ") +
+                        c.title +
+                        " contents"
+                      }
+                      onClick={() =>
+                        setExpanded((x) =>
+                          x.includes(c.id)
+                            ? x.filter((id) => id !== c.id)
+                            : [...x, c.id],
+                        )
+                      }
+                    >
+                      {c.title}
+                    </button>
+                  )}
+                  {c.kind !== "folder" && (
+                    <button
+                      className="tree-open"
+                      title={"Focus " + c.title}
+                      aria-label={"Open " + c.title + " in dedicated view"}
+                      onClick={() => setFocus(c.id)}
+                    >
+                      <ArrowRight size={14} />
+                    </button>
+                  )}
+                  <span className="tree-create">
+                    <button
+                      aria-label={"New folder in " + c.title}
+                      title="New folder"
+                      onClick={() => addFolder(c.id)}
+                    >
+                      <FolderPlus size={14} />
+                    </button>
+                    <button
+                      aria-label={"New file in " + c.title}
+                      title="New file"
+                      onClick={() => addNote(c.id)}
+                    >
+                      <FileText size={14} />
+                    </button>
+                  </span>
+                  <Menu
+                    trigger={
+                      <button
+                        className="tree-more"
+                        aria-label={"Actions for " + c.title}
+                      >
+                        <MoreHorizontal size={15} />
+                      </button>
+                    }
+                    items={itemActions(c.id)}
+                  />
+                </div>
+                {expanded.includes(c.id) && (
+                  <div role="group">{renderTree(c.id, depth + 1)}</div>
+                )}
+              </div>
+            );
+          }
+          const n = item;
+          return (
             <div
+              key={n.id}
               role="treeitem"
-              aria-expanded={expanded.includes(c.id)}
-              aria-selected={selected.includes(c.id)}
+              aria-selected={
+                (activePane === "right" && rightNote
+                  ? rightNote.id
+                  : activeId) === n.id
+              }
               tabIndex={0}
               className={
-                "tree-row container-row " +
-                (c.parentId === null ? "root-row " : "") +
-                (selected.includes(c.id) ? "selected " : "") +
-                (w.settings.coloredRows ? "colored" : "")
+                "tree-row note-row " +
+                ((activePane === "right" && rightNote
+                  ? rightNote.id
+                  : activeId) === n.id
+                  ? "is-active "
+                  : "") +
+                (selected.includes(n.id) ? "selected" : "")
               }
-              style={
-                {
-                  "--collection-color": c.color,
-                  "--folder-color": [
-                    "#a6b7d9",
-                    "#c9afcf",
-                    "#d8bd8a",
-                    "#93c8b5",
-                  ][(ancestry(w, c.id).length - 1) % 4],
-                  paddingLeft: 12 + depth * 17,
-                } as CSSProperties
-              }
+              style={{ paddingLeft: depth * 17 + 30 }}
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey)
+                  setSelected((s) =>
+                    s.includes(n.id)
+                      ? s.filter((id) => id !== n.id)
+                      : [...s, n.id],
+                  );
+                else {
+                  setSelected([n.id]);
+                  openNote(n.id);
+                }
+              }}
+              onAuxClick={(e) => {
+                if (e.button === 1) openNote(n.id, true);
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setContextMenu({
                   x: Math.min(e.clientX, innerWidth - 230),
-                  y: Math.min(e.clientY, innerHeight - 450),
-                  id: c.id,
+                  y: Math.min(e.clientY, innerHeight - 380),
+                  id: n.id,
                 });
               }}
               onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setExpanded((x) =>
-                    x.includes(c.id)
-                      ? x.filter((id) => id !== c.id)
-                      : [...x, c.id],
-                  );
-                }
-                if (e.key === "ArrowRight")
-                  setExpanded((x) => [...new Set([...x, c.id])]);
-                if (e.key === "ArrowLeft")
-                  setExpanded((x) => x.filter((id) => id !== c.id));
+                if (e.key === "Enter") openNote(n.id);
                 if (e.key === "F2")
-                  setDialog({ type: "rename", id: c.id, value: c.title });
+                  setDialog({ type: "rename", id: n.id, value: n.title });
+                if (e.key === "Delete") mutate((s) => trashItems(s, [n.id]));
                 if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                   e.preventDefault();
                   const rows = [
@@ -1168,186 +1847,22 @@ export default function WorkspaceApp({
                   ]?.focus();
                 }
               }}
-              onClick={(e) => {
-                if ((e.target as Element).closest("button, input, [role=menu]"))
-                  return;
-                setExpanded((x) =>
-                  x.includes(c.id)
-                    ? x.filter((id) => id !== c.id)
-                    : [...x, c.id],
-                );
-              }}
-              draggable={!c.system}
-              onDragStart={(e) =>
-                e.dataTransfer.setData("application/studyspace", c.id)
-              }
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                const id = e.dataTransfer.getData("application/studyspace");
-                if (id) setDialog({ type: "move", id, destination: c.id });
-              }}
+              draggable={renaming?.id !== n.id}
+              {...treeDragProps(n.id)}
             >
-              <button
-                className="disclosure"
-                aria-label={
-                  (expanded.includes(c.id) ? "Collapse " : "Expand ") + c.title
-                }
-                onClick={() =>
-                  setExpanded((x) =>
-                    x.includes(c.id)
-                      ? x.filter((id) => id !== c.id)
-                      : [...x, c.id],
-                  )
-                }
-              >
-                {expanded.includes(c.id) ? (
-                  <ChevronDown size={13} />
-                ) : (
-                  <ChevronRight size={13} />
-                )}
-              </button>
-              <SymbolIcon
-                name={c.kind === "folder" ? "folder" : c.icon}
-                size={16}
-              />
-              {renaming?.id === c.id ? (
-                renameField(
-                  c.id,
-                  c.kind === "folder" ? "Folder name" : "Collection name",
-                )
+              <FileText size={14} />
+              {renaming?.id === n.id ? (
+                renameField(n.id, "File name")
               ) : (
-                <button
-                  className="tree-title"
-                  aria-label={
-                    (expanded.includes(c.id) ? "Collapse " : "Expand ") +
-                    c.title +
-                    " contents"
-                  }
-                  onClick={() =>
-                    setExpanded((x) =>
-                      x.includes(c.id)
-                        ? x.filter((id) => id !== c.id)
-                        : [...x, c.id],
-                    )
-                  }
-                >
-                  {c.title}
-                </button>
+                <span className="tree-title">
+                  {noteDisplayTitle(n) || "Untitled"}
+                </span>
               )}
-              <button
-                className="tree-open"
-                title={"Focus " + c.title}
-                aria-label={"Open " + c.title + " in dedicated view"}
-                onClick={() => setFocus(c.id)}
-              >
-                <ArrowRight size={14} />
-              </button>
-              <span className="tree-create">
-                <button
-                  aria-label={"New folder in " + c.title}
-                  title="New folder"
-                  onClick={() => addFolder(c.id)}
-                >
-                  <FolderPlus size={14} />
-                </button>
-                <button
-                  aria-label={"New file in " + c.title}
-                  title="New file"
-                  onClick={() => addNote(c.id)}
-                >
-                  <FileText size={14} />
-                </button>
-              </span>
-              <Menu
-                trigger={
-                  <button
-                    className="tree-more"
-                    aria-label={"Actions for " + c.title}
-                  >
-                    <MoreHorizontal size={15} />
-                  </button>
-                }
-                items={itemActions(c.id)}
-              />
+              {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
             </div>
-            {expanded.includes(c.id) && (
-              <div role="group">{renderTree(c.id, depth + 1)}</div>
-            )}
-          </div>
-        ))}
-        {orderedNotes.slice(page * 200, (page + 1) * 200).map((n) => (
-          <div
-            key={n.id}
-            role="treeitem"
-            aria-selected={activeId === n.id}
-            tabIndex={0}
-            className={
-              "tree-row note-row " +
-              (activeId === n.id ? "is-active " : "") +
-              (selected.includes(n.id) ? "selected" : "")
-            }
-            style={{ paddingLeft: depth * 17 + 30 }}
-            onClick={(e) => {
-              if (e.ctrlKey || e.metaKey)
-                setSelected((s) =>
-                  s.includes(n.id)
-                    ? s.filter((id) => id !== n.id)
-                    : [...s, n.id],
-                );
-              else {
-                setSelected([n.id]);
-                openNote(n.id);
-              }
-            }}
-            onAuxClick={(e) => {
-              if (e.button === 1) openNote(n.id, true);
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setContextMenu({
-                x: Math.min(e.clientX, innerWidth - 230),
-                y: Math.min(e.clientY, innerHeight - 380),
-                id: n.id,
-              });
-            }}
-            onKeyDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              if (e.key === "Enter") openNote(n.id);
-              if (e.key === "F2")
-                setDialog({ type: "rename", id: n.id, value: n.title });
-              if (e.key === "Delete") mutate((s) => trashItems(s, [n.id]));
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                e.preventDefault();
-                const rows = [
-                  ...document.querySelectorAll<HTMLElement>("[role=treeitem]"),
-                ];
-                rows[
-                  rows.indexOf(e.currentTarget) +
-                    (e.key === "ArrowDown" ? 1 : -1)
-                ]?.focus();
-              }
-            }}
-            draggable={renaming?.id !== n.id}
-            onDragStart={(e) =>
-              e.dataTransfer.setData("application/studyspace", n.id)
-            }
-          >
-            <FileText size={14} />
-            {renaming?.id === n.id ? (
-              renameField(n.id, "File name")
-            ) : (
-              <span className="tree-title">
-                {noteDisplayTitle(n) || "Untitled"}
-              </span>
-            )}
-            {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
-          </div>
-        ))}
-        {notes.length > 200 && (
+          );
+        })}
+        {orderedItems.length > 200 && (
           <div className="tree-pagination" role="none">
             <button
               disabled={!(treePages[parentId ?? "root"] ?? 0)}
@@ -1365,11 +1880,12 @@ export default function WorkspaceApp({
             </button>
             <span>
               {(treePages[parentId ?? "root"] ?? 0) + 1} /{" "}
-              {Math.ceil(notes.length / 200)}
+              {Math.ceil(orderedItems.length / 200)}
             </span>
             <button
               disabled={
-                ((treePages[parentId ?? "root"] ?? 0) + 1) * 200 >= notes.length
+                ((treePages[parentId ?? "root"] ?? 0) + 1) * 200 >=
+                orderedItems.length
               }
               onClick={() =>
                 setTreePages((p) => ({
@@ -1434,7 +1950,7 @@ export default function WorkspaceApp({
         className={
           "activity-ribbon " +
           (!w.settings.ribbonCompact ? "ribbon-labeled " : "") +
-          (tour && tourStep < 2 ? "tour-target" : "")
+          ""
         }
         aria-label="Main navigation"
       >
@@ -1491,6 +2007,17 @@ export default function WorkspaceApp({
         </div>
         <div className="ribbon-bottom">
           <IconButton
+            label="Messages"
+            active={view === "messages"}
+            onClick={() => setView("messages")}
+          >
+            <MessageSquare size={19} />
+            {!w.settings.ribbonCompact && (
+              <span className="ribbon-label">Messages</span>
+            )}
+            <MessageBadge enabled={!demo} />
+          </IconButton>
+          <IconButton
             label="Inbox"
             active={view === "inbox"}
             onClick={() => setView("inbox")}
@@ -1515,10 +2042,13 @@ export default function WorkspaceApp({
           </IconButton>
           <button
             className="avatar"
-            aria-label="Account settings"
-            onClick={() => setView("settings")}
+            aria-label="Your profile"
+            onClick={() => setView("profile")}
           >
-            {w.settings.displayName.slice(0, 1).toUpperCase()}
+            <ProfileAvatar
+              enabled={!demo}
+              fallback={w.settings.displayName.slice(0, 1).toUpperCase()}
+            />
           </button>
         </div>
       </nav>
@@ -1579,11 +2109,57 @@ export default function WorkspaceApp({
               <kbd>Ctrl O</kbd>
             </button>
             <hr className="explorer-divider" />
+            {pinnedNotes.length > 0 && (
+              <section className="pinned-notes" aria-label="Pinned notes">
+                <h2>
+                  <Pin size={12} />
+                  Pinned notes
+                </h2>
+                <div>
+                  {pinnedNotes.map((n) => (
+                    <div
+                      className={
+                        "pinned-note-row" +
+                        ((activePane === "right" ? rightNoteId : activeId) ===
+                        n.id
+                          ? " selected"
+                          : "")
+                      }
+                      key={n.id}
+                    >
+                      <button
+                        onClick={() => openNote(n.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({
+                            id: n.id,
+                            x: Math.min(e.clientX, innerWidth - 230),
+                            y: Math.min(e.clientY, innerHeight - 400),
+                          });
+                        }}
+                      >
+                        <FileText size={15} />
+                        <span>{n.title || "Untitled"}</span>
+                      </button>
+                      <Menu
+                        trigger={
+                          <button aria-label={"Actions for pinned " + n.title}>
+                            <MoreHorizontal size={15} />
+                          </button>
+                        }
+                        items={itemActions(n.id)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
             <div className="tree-heading">
               {focused ? (
                 <button
                   className="back-collections"
-                  onClick={() => setFocus(null)}
+                  title="Return to the previous view"
+                  onClick={returnFromCollection}
                 >
                   <ArrowLeft size={16} /> All Collections
                 </button>
@@ -1654,6 +2230,25 @@ export default function WorkspaceApp({
                 />
               </div>
             )}
+            {studyFolderPicker && (
+              <div className="study-folder-prompt" role="status">
+                <strong>Choose study material</strong>
+                <p>
+                  Click a folder or collection below. Use the arrows to reveal
+                  nested folders.
+                </p>
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    studyFolderPicker.cancel?.();
+                    setStudyFolderPicker(null);
+                    if (innerWidth <= 1050) setLeft(false);
+                  }}
+                >
+                  Cancel selection
+                </button>
+              </div>
+            )}
             <div className="tree-scroll">
               <div
                 className="file-tree"
@@ -1662,7 +2257,7 @@ export default function WorkspaceApp({
                   focused ? focused.title + " files" : "All collections"
                 }
               >
-                {renderTree(focus)}
+                {renderTree(studyFolderPicker ? null : focus)}
               </div>
 
               {!w.notes.length && (
@@ -1710,6 +2305,18 @@ export default function WorkspaceApp({
                       }
                     </span>
                   </button>
+                  {boardCount > 0 && (
+                    <button onClick={() => setBlockBrowser("whiteboard")}>
+                      <PenLine size={15} />
+                      Whiteboards<span>{boardCount}</span>
+                    </button>
+                  )}
+                  {codeCount > 0 && (
+                    <button onClick={() => setBlockBrowser("code")}>
+                      <Code2 size={15} />
+                      Code blocks<span>{codeCount}</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setView("search");
@@ -1762,616 +2369,747 @@ export default function WorkspaceApp({
           />
         </>
       )}
-      <main className="main-workspace">
-        <div className="tab-strip">
-          {!left && !zen && (
-            <IconButton label="Open explorer" onClick={() => setLeft(true)}>
-              <PanelLeftOpen size={17} />
-            </IconButton>
-          )}
-          <div className="tabs">
-            {tabs.map((id) => {
-              const n = w.notes.find((n) => n.id === id && !n.trashed);
-              if (!n) return null;
-              return (
-                <div
-                  className={
-                    "note-tab " +
-                    (activeId === id && view === "collections" ? "current" : "")
-                  }
-                  key={id}
-                  draggable
-                  onDragStart={(e) =>
-                    e.dataTransfer.setData("application/studyspace-tab", id)
-                  }
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    const from = e.dataTransfer.getData(
-                      "application/studyspace-tab",
-                    );
-                    if (from)
-                      setTabs((old) => {
-                        const result = old.filter((x) => x !== from);
-                        result.splice(result.indexOf(id), 0, from);
-                        return result;
-                      });
-                  }}
-                >
-                  <button
-                    onClick={() => openNote(id)}
-                    title={
-                      (focus && rootOf(w, n.containerId)?.id !== focus
-                        ? rootOf(w, n.containerId)?.title + " · "
-                        : "") + noteDisplayTitle(n)
-                    }
-                  >
-                    {pinned.includes(id) ? (
-                      <Pin size={13} />
-                    ) : (
-                      <FileText size={13} />
-                    )}
-                    <span>{noteDisplayTitle(n)}</span>
-                  </button>
-                  <IconButton
-                    label={"Close " + noteDisplayTitle(n)}
-                    onClick={() => closeTab(id)}
-                  >
-                    <X size={12} />
-                  </IconButton>
-                </div>
-              );
-            })}
-          </div>
-          <IconButton label="New note" onClick={() => addNote()}>
-            <Plus size={17} />
-          </IconButton>
-          <div className="tab-strip-actions">
-            <IconButton
-              label={zen ? "Exit Zen mode" : "Zen mode"}
-              active={zen}
-              onClick={() => setZen(!zen)}
-            >
-              {zen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </IconButton>
-            <IconButton
-              label={!zen && right ? "Close inspector" : "Open inspector"}
-              aria-expanded={!zen && right}
-              onClick={() => {
-                if (zen || !right) {
-                  setZen(false);
-                  setRight(true);
-                } else setRight(false);
-              }}
-            >
-              {!zen && right ? (
-                <PanelRightClose size={17} />
-              ) : (
-                <PanelRightOpen size={17} />
-              )}
-            </IconButton>
-          </div>
-        </div>
-        {(conflict || recovery) && (
-          <div className="recovery-banner">
-            <AlertCircle size={16} />
-            <span>
-              {conflict
-                ? "Another session changed this workspace. Your local draft is safe."
-                : "An interrupted draft is available."}
-            </span>
-            <button
-              onClick={() => {
-                if (recovery) {
-                  setDialog({ type: "conflict", draft: recovery });
-                } else setDialog({ type: "conflict" });
-              }}
-            >
-              Review draft
-            </button>
-            <button
-              onClick={async () => {
-                if (recovery) {
-                  setRecovery(null);
-                  await (
-                    await localDB()
-                  ).delete("drafts", account + ":workspace");
-                } else location.reload();
-              }}
-            >
-              {recovery ? "Dismiss" : "Reload saved"}
-            </button>
-          </div>
-        )}
-        {view === "collections" && active ? (
-          <>
-            <div className="breadcrumb-bar">
-              <div className="breadcrumbs">
-                {breadcrumb.map((c, i) => (
-                  <span key={c.id}>
-                    <button title={c.title} onClick={() => setFocus(c.id)}>
-                      {i === 0 && <SymbolIcon name={c.icon} size={13} />}{" "}
-                      {c.title}
-                    </button>
-                    <ChevronRight size={12} />
-                  </span>
-                ))}
-                <span title={noteDisplayTitle(active)}>
-                  {noteDisplayTitle(active)}
-                </span>
-              </div>
-              <div className="inline-actions">
-                <span className="private-label">
-                  <Lock size={11} /> Private
-                </span>
-                <IconButton
-                  label="Note history"
-                  onClick={() => setDialog({ type: "history", id: active.id })}
-                >
-                  <History size={16} />
-                </IconButton>
-                <Menu
-                  trigger={
-                    <button className="icon-button" aria-label="Note actions">
-                      <MoreHorizontal size={18} />
-                    </button>
-                  }
-                  items={[
-                    ...itemActions(active.id),
-                    "separator",
-                    {
-                      label: pinned.includes(active.id)
-                        ? "Unpin tab"
-                        : "Pin tab",
-                      icon: Pin,
-                      action: () =>
-                        setPinned((p) =>
-                          p.includes(active.id)
-                            ? p.filter((x) => x !== active.id)
-                            : [...p, active.id],
-                        ),
-                    },
-                    {
-                      label: "Close other tabs",
-                      icon: X,
-                      action: () => setTabs([active.id]),
-                    },
-                    {
-                      label: "Reopen closed tab",
-                      icon: RotateCcw,
-                      disabled: !closedTabs.length,
-                      action: () => {
-                        const id = closedTabs.at(-1);
-                        if (id) {
-                          openNote(id);
-                          setClosedTabs((x) => x.slice(0, -1));
-                        }
-                      },
-                    },
-                  ]}
-                />
-              </div>
-            </div>
-            {focus && activeRoot?.id !== rootOf(w, focus)?.id && (
-              <div className="context-banner">
-                This note belongs to {activeRoot?.title}.{" "}
-                <button onClick={() => setFocus(activeRoot?.id ?? null)}>
-                  Switch to collection <ArrowRight size={12} />
-                </button>
-              </div>
-            )}
-            <div className="document-scroll" ref={scroller}>
-              <article
-                className={
-                  "document " + (w.settings.fullWidth ? "full-width" : "")
-                }
+      <div
+        className={
+          "workspace-panes" +
+          (view === "collections" && rightNote ? " is-split" : "")
+        }
+      >
+        <main
+          className={
+            "main-workspace" +
+            (activePane === "left" ? " active-file-pane" : "")
+          }
+          aria-label="Left file pane"
+          onFocusCapture={() => setActivePane("left")}
+          onPointerDown={() => setActivePane("left")}
+        >
+          <div className="tab-strip">
+            <div className="note-navigation">
+              <button
+                aria-label="Back to previous note"
+                title="Previous note"
+                disabled={historyTarget("left", -1) < 0}
+                onClick={() => navigateNote("left", -1)}
               >
-                <div className="document-meta">
-                  <span className="eyebrow">
-                    <span
-                      className="tiny-dot"
-                      style={{ background: activeRoot?.color }}
-                    />
-                    {active.kind === "note"
-                      ? "STUDY NOTE"
-                      : active.kind.toUpperCase()}
-                    {demo && (
-                      <span className="demo-note-label">LOCAL DEMO</span>
-                    )}
-                  </span>
+                <ArrowLeft size={16} />
+              </button>
+              <button
+                aria-label="Forward to next note"
+                title="Next note"
+                disabled={historyTarget("left", 1) < 0}
+                onClick={() => navigateNote("left", 1)}
+              >
+                <ArrowRight size={16} />
+              </button>
+            </div>
+            {!left && !zen && (
+              <IconButton label="Open explorer" onClick={() => setLeft(true)}>
+                <PanelLeftOpen size={17} />
+              </IconButton>
+            )}
+            <div
+              className="tabs"
+              role="region"
+              aria-label="Open file tabs"
+              tabIndex={0}
+              onWheel={(event) => {
+                const element = event.currentTarget;
+                if (
+                  element.scrollWidth <= element.clientWidth ||
+                  Math.abs(event.deltaX) > Math.abs(event.deltaY)
+                )
+                  return;
+                element.scrollLeft += event.deltaY;
+              }}
+            >
+              {tabs.map((id) => {
+                const n = w.notes.find((n) => n.id === id && !n.trashed);
+                if (!n) return null;
+                return (
                   <div
-                    className="mode-switch"
-                    role="group"
-                    aria-label="Editor mode"
+                    className={
+                      "note-tab " +
+                      (activeId === id && view === "collections"
+                        ? "current"
+                        : "")
+                    }
+                    key={id}
+                    draggable
+                    onDragStart={(e) =>
+                      e.dataTransfer.setData("application/studyspace-tab", id)
+                    }
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      const from = e.dataTransfer.getData(
+                        "application/studyspace-tab",
+                      );
+                      if (from)
+                        setTabs((old) => {
+                          const result = old.filter((x) => x !== from);
+                          result.splice(result.indexOf(id), 0, from);
+                          return result;
+                        });
+                    }}
                   >
-                    {[
-                      { value: "source", label: "Source", icon: Code2 },
-                      { value: "live", label: "Live preview", icon: PenLine },
-                      { value: "reading", label: "Reading", icon: Eye },
-                    ].map((m) => (
-                      <IconButton
-                        key={m.value}
-                        label={m.label}
-                        active={mode === m.value}
-                        onClick={() => setMode(m.value as typeof mode)}
-                      >
-                        <m.icon size={15} />
-                      </IconButton>
-                    ))}
-                  </div>
-                </div>
-                <input
-                  ref={titleInput}
-                  className="note-title"
-                  aria-label="Note title"
-                  value={noteDisplayTitle(active)}
-                  readOnly={mode === "reading"}
-                  onFocus={(e) => {
-                    if (e.target.value === "Untitled") e.target.select();
-                  }}
-                  onMouseUp={(e) => {
-                    if (
-                      e.currentTarget.value === "Untitled" &&
-                      mode !== "reading"
-                    ) {
-                      e.preventDefault();
-                      e.currentTarget.select();
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === "Enter" &&
-                      !e.nativeEvent.isComposing &&
-                      mode !== "reading"
-                    ) {
-                      e.preventDefault();
-                      editor.current?.focus();
-                    }
-                  }}
-                  onBlur={() => {
-                    newTitleId.current = null;
-                  }}
-                  onChange={(e) =>
-                    mutate((s) => {
-                      const n = s.notes.find((n) => n.id === active.id)!;
-                      saveNote(s, n.id, n.revision, { title: e.target.value });
-                    })
-                  }
-                />
-                <div className="note-properties">
-                  <span>
-                    <CalendarDays size={12} />
-                    {active.journalDate
-                      ? formatJournalDate(active.journalDate)
-                      : new Date(active.createdAt).toLocaleDateString(
-                          undefined,
-                          {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          },
-                        )}
-                  </span>
-                  {active.tags.map((tag) => (
                     <button
-                      key={tag}
-                      className="tag"
-                      onClick={() => {
-                        setView("search");
-                        setTreeQuery("#" + tag);
-                      }}
+                      onClick={() => openNote(id, true, "left")}
+                      title={
+                        (focus && rootOf(w, n.containerId)?.id !== focus
+                          ? rootOf(w, n.containerId)?.title + " · "
+                          : "") + noteDisplayTitle(n)
+                      }
                     >
-                      #{tag}
+                      {pinned.includes(id) ? (
+                        <Pin size={13} />
+                      ) : (
+                        <FileText size={13} />
+                      )}
+                      <span>{noteDisplayTitle(n)}</span>
                     </button>
+                    <IconButton
+                      label={"Close " + noteDisplayTitle(n)}
+                      onClick={() => closeTab(id)}
+                    >
+                      <X size={12} />
+                    </IconButton>
+                  </div>
+                );
+              })}
+            </div>
+            <IconButton label="New note" onClick={() => addNote()}>
+              <Plus size={17} />
+            </IconButton>
+            <div className="tab-strip-actions">
+              <IconButton
+                label={zen ? "Exit Zen mode" : "Zen mode"}
+                active={zen}
+                onClick={() => setZen(!zen)}
+              >
+                {zen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </IconButton>
+              <IconButton
+                label={!zen && right ? "Close inspector" : "Open inspector"}
+                aria-expanded={!zen && right}
+                onClick={() => {
+                  if (zen || !right) {
+                    setZen(false);
+                    setRight(true);
+                  } else setRight(false);
+                }}
+              >
+                {!zen && right ? (
+                  <PanelRightClose size={17} />
+                ) : (
+                  <PanelRightOpen size={17} />
+                )}
+              </IconButton>
+            </div>
+          </div>
+          {(conflict || recovery) && (
+            <div className="recovery-banner">
+              <AlertCircle size={16} />
+              <span>
+                {conflict
+                  ? "Another session changed this workspace. Your local draft is safe."
+                  : "An interrupted draft is available."}
+              </span>
+              <button
+                onClick={() => {
+                  if (recovery) {
+                    setDialog({ type: "conflict", draft: recovery });
+                  } else setDialog({ type: "conflict" });
+                }}
+              >
+                Review draft
+              </button>
+              <button
+                onClick={async () => {
+                  if (recovery) {
+                    setRecovery(null);
+                    await (
+                      await localDB()
+                    ).delete("drafts", account + ":workspace");
+                  } else location.reload();
+                }}
+              >
+                {recovery ? "Dismiss" : "Reload saved"}
+              </button>
+            </div>
+          )}
+          {view === "collections" && active ? (
+            <>
+              <div className="breadcrumb-bar">
+                <div className="breadcrumbs">
+                  {breadcrumb.map((c, i) => (
+                    <span key={c.id}>
+                      <button title={c.title} onClick={() => setFocus(c.id)}>
+                        {i === 0 && <SymbolIcon name={c.icon} size={13} />}{" "}
+                        {c.title}
+                      </button>
+                      <ChevronRight size={12} />
+                    </span>
                   ))}
+                  <span title={noteDisplayTitle(active)}>
+                    {noteDisplayTitle(active)}
+                  </span>
+                </div>
+                <div className="inline-actions">
+                  <span className="private-label">
+                    <Lock size={11} /> Private
+                  </span>
+                  <IconButton
+                    label="Note history"
+                    onClick={() =>
+                      setDialog({ type: "history", id: active.id })
+                    }
+                  >
+                    <History size={16} />
+                  </IconButton>
+                  <Menu
+                    trigger={
+                      <button className="icon-button" aria-label="Note actions">
+                        <MoreHorizontal size={18} />
+                      </button>
+                    }
+                    items={[
+                      ...itemActions(active.id),
+                      "separator",
+                      {
+                        label: pinned.includes(active.id)
+                          ? "Unpin tab"
+                          : "Pin tab",
+                        icon: Pin,
+                        action: () =>
+                          setPinned((p) =>
+                            p.includes(active.id)
+                              ? p.filter((x) => x !== active.id)
+                              : [...p, active.id],
+                          ),
+                      },
+                      {
+                        label: "Close other tabs",
+                        icon: X,
+                        action: () => setTabs([active.id]),
+                      },
+                      {
+                        label: "Reopen closed tab",
+                        icon: RotateCcw,
+                        disabled: !closedTabs.length,
+                        action: () => {
+                          const id = closedTabs.at(-1);
+                          if (id) {
+                            openNote(id);
+                            setClosedTabs((x) => x.slice(0, -1));
+                          }
+                        },
+                      },
+                    ]}
+                  />
+                </div>
+              </div>
+              {active.kind === "quick" && (
+                <div className="context-banner">
+                  <button onClick={() => setView("quick-notes")}>
+                    <ArrowLeft size={12} />
+                    Quick notes
+                  </button>
+                  <span>This thought is unfiled.</span>
                   <button
-                    className="add-tag"
                     onClick={() =>
                       setDialog({
-                        type: "tags",
+                        type: "move",
                         id: active.id,
-                        value: active.tags.join(", "),
+                        destination: general(w).id,
                       })
                     }
                   >
-                    + Add tag
+                    <FolderInput size={12} />
+                    Move to collection / folder
                   </button>
                 </div>
-                <div className="writing-area">
-                  {mode === "reading" && (
-                    <Markdown
-                      attachments={w.attachments}
-                      notes={w.notes.filter((n) => !n.trashed)}
-                      demo={demo}
-                      fromPath={active.originalPath ?? active.title + ".md"}
-                      density={w.settings.dictionaryDensity}
-                      onAttachment={(id) => setDialog({ type: "pdf", id })}
-                      body={
-                        active.body.startsWith("# " + active.title + "\n")
-                          ? active.body
-                              .slice(active.title.length + 3)
-                              .replace(/^\n/, "")
-                          : active.body
-                      }
-                      definitions={definitionsForNote}
-                      onDefinition={(id) =>
-                        setDialog({ type: "definition-detail", id })
-                      }
-                      onCitation={(id) => {
-                        setInspector("sources");
-                        setRight(true);
-                        setDialog({ type: "citation-detail", id });
-                      }}
-                      remoteImages={w.settings.remoteImages}
-                      onLink={(target) => {
-                        const mapped = active.linkMap?.[target];
-                        const match = resolveLink(
-                          target,
-                          active.originalPath ?? active.title,
-                          w.notes,
-                        );
-                        if (mapped || match.id) {
-                          openNote(mapped ?? match.id!);
-                          const anchor = target.split("#")[1];
-                          if (anchor)
-                            setTimeout(
-                              () =>
-                                document
-                                  .getElementById(
-                                    anchor
-                                      .replace(/^\^/, " ")
-                                      .trim()
-                                      .toLowerCase()
-                                      .replace(/\s+/g, "-"),
-                                  )
-                                  ?.scrollIntoView({ block: "start" }),
-                              180,
-                            );
-                        } else
-                          toast(
-                            match.status === "ambiguous"
-                              ? "Several notes match. Use Find a note to choose one."
-                              : "Linked note not found.",
-                          );
+              )}
+              {active.kind !== "quick" &&
+                !isPinnedNote(w, active.id) &&
+                focus &&
+                activeRoot?.id !== rootOf(w, focus)?.id && (
+                  <div className="context-banner">
+                    This note belongs to {activeRoot?.title}.{" "}
+                    <button onClick={() => setFocus(activeRoot?.id ?? null)}>
+                      Switch to collection <ArrowRight size={12} />
+                    </button>
+                  </div>
+                )}
+              <div className="document-scroll" ref={scroller}>
+                <article
+                  className={
+                    "document " + (w.settings.fullWidth ? "full-width" : "")
+                  }
+                >
+                  <div className="document-meta">
+                    <ModulesButton
+                      onInsert={(text) => {
+                        if (editor.current && mode !== "reading")
+                          editor.current.insert(text);
+                        else
+                          mutate((w) => {
+                            const n = w.notes.find((n) => n.id === active.id);
+                            if (n)
+                              saveNote(w, n.id, n.revision, {
+                                body: n.body + text,
+                              });
+                          });
+                        setMode("live");
                       }}
                     />
-                  )}
-                  <div hidden={mode === "reading"}>
-                    <Editor
-                      id={active.id}
-                      body={active.body}
-                      attachments={w.attachments}
-                      demo={demo}
-                      mode={mode === "reading" ? "live" : mode}
-                      onChange={(body) => {
-                        if (
-                          wRef.current?.notes.find((n) => n.id === active.id)
-                            ?.body !== body
-                        )
-                          mutate(
-                            (s) => {
-                              const n = s.notes.find(
-                                (n) => n.id === active.id,
-                              )!;
-                              saveNote(s, n.id, n.revision, { body });
-                            },
+                    <span className="eyebrow">
+                      <span
+                        className="tiny-dot"
+                        style={{ background: activeRoot?.color }}
+                      />
+                      {active.kind === "note"
+                        ? "STUDY NOTE"
+                        : active.kind.toUpperCase()}
+                      {demo && (
+                        <span className="demo-note-label">LOCAL DEMO</span>
+                      )}
+                    </span>
+                    <div
+                      className="mode-switch"
+                      role="group"
+                      aria-label="Editor mode"
+                    >
+                      {[
+                        { value: "source", label: "Source", icon: Code2 },
+                        { value: "live", label: "Live preview", icon: PenLine },
+                        { value: "reading", label: "Reading", icon: Eye },
+                      ].map((m) => (
+                        <IconButton
+                          key={m.value}
+                          label={m.label}
+                          active={mode === m.value}
+                          onClick={() => setMode(m.value as typeof mode)}
+                        >
+                          <m.icon size={15} />
+                        </IconButton>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    ref={titleInput}
+                    className="note-title"
+                    aria-label="Note title"
+                    value={noteDisplayTitle(active)}
+                    readOnly={mode === "reading"}
+                    onFocus={(e) => {
+                      if (e.target.value === "Untitled") e.target.select();
+                    }}
+                    onMouseUp={(e) => {
+                      if (
+                        e.currentTarget.value === "Untitled" &&
+                        mode !== "reading"
+                      ) {
+                        e.preventDefault();
+                        e.currentTarget.select();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key === "Enter" &&
+                        !e.nativeEvent.isComposing &&
+                        mode !== "reading"
+                      ) {
+                        e.preventDefault();
+                        editor.current?.focus();
+                      }
+                    }}
+                    onBlur={() => {
+                      newTitleId.current = null;
+                    }}
+                    onChange={(e) =>
+                      mutate((s) => {
+                        const n = s.notes.find((n) => n.id === active.id)!;
+                        saveNote(s, n.id, n.revision, {
+                          title: e.target.value,
+                        });
+                      })
+                    }
+                  />
+                  <div className="note-properties">
+                    <span>
+                      <CalendarDays size={12} />
+                      {active.journalDate
+                        ? formatJournalDate(active.journalDate)
+                        : new Date(active.createdAt).toLocaleDateString(
                             undefined,
-                            true,
-                          );
-                      }}
-                      onSelection={setSelection}
-                      definitions={definitionsForNote}
-                      onDefinition={(id) =>
-                        setDialog({ type: "definition-detail", id })
+                            {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            },
+                          )}
+                    </span>
+                    {active.tags.map((tag) => (
+                      <button
+                        key={tag}
+                        className="tag"
+                        onClick={() => {
+                          setView("search");
+                          setTreeQuery("#" + tag);
+                        }}
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                    <button
+                      className="add-tag"
+                      onClick={() =>
+                        setDialog({
+                          type: "tags",
+                          id: active.id,
+                          value: active.tags.join(", "),
+                        })
                       }
-                      onAttach={(files) => void attach(files)}
-                      handle={editor}
-                      notes={w.notes}
+                    >
+                      + Add tag
+                    </button>
+                  </div>
+                  <div className="writing-area">
+                    {mode === "reading" && (
+                      <Markdown
+                        attachments={w.attachments}
+                        notes={w.notes.filter((n) => !n.trashed)}
+                        demo={demo}
+                        fromPath={active.originalPath ?? active.title + ".md"}
+                        density={w.settings.dictionaryDensity}
+                        onAttachment={(id) => setDialog({ type: "pdf", id })}
+                        body={
+                          active.body.startsWith("# " + active.title + "\n")
+                            ? active.body
+                                .slice(active.title.length + 3)
+                                .replace(/^\n/, "")
+                            : active.body
+                        }
+                        definitions={definitionsForNote}
+                        onDefinition={(id) =>
+                          setDialog({ type: "definition-detail", id })
+                        }
+                        onCitation={(id) => {
+                          setInspector("sources");
+                          setRight(true);
+                          setDialog({ type: "citation-detail", id });
+                        }}
+                        remoteImages={w.settings.remoteImages}
+                        onLink={(target) => {
+                          const mapped = active.linkMap?.[target];
+                          const match = resolveLink(
+                            target,
+                            active.originalPath ?? active.title,
+                            w.notes,
+                          );
+                          if (mapped || match.id) {
+                            openNote(mapped ?? match.id!);
+                            const anchor = target.split("#")[1];
+                            if (anchor)
+                              setTimeout(
+                                () =>
+                                  document
+                                    .getElementById(
+                                      anchor
+                                        .replace(/^\^/, " ")
+                                        .trim()
+                                        .toLowerCase()
+                                        .replace(/\s+/g, "-"),
+                                    )
+                                    ?.scrollIntoView({ block: "start" }),
+                                180,
+                              );
+                          } else
+                            toast(
+                              match.status === "ambiguous"
+                                ? "Several notes match. Use Find a note to choose one."
+                                : "Linked note not found.",
+                            );
+                        }}
+                      />
+                    )}
+                    <div hidden={mode === "reading"}>
+                      <Editor
+                        id={active.id}
+                        body={active.body}
+                        attachments={w.attachments}
+                        demo={demo}
+                        mode={mode === "reading" ? "live" : mode}
+                        onChange={(body) => {
+                          if (
+                            wRef.current?.notes.find((n) => n.id === active.id)
+                              ?.body !== body
+                          )
+                            mutate(
+                              (s) => {
+                                const n = s.notes.find(
+                                  (n) => n.id === active.id,
+                                )!;
+                                saveNote(s, n.id, n.revision, { body });
+                              },
+                              undefined,
+                              true,
+                            );
+                        }}
+                        onSelection={setSelection}
+                        definitions={definitionsForNote}
+                        onDefinition={(id) =>
+                          setDialog({ type: "definition-detail", id })
+                        }
+                        onAttach={(files) => void attach(files)}
+                        onChat={(text) => ctx.openChat(text, active.id)}
+                        onBlockAction={(action, block) =>
+                          ctx.blockAction?.(action, block, active.id)
+                        }
+                        onYoutubePaste={(url) =>
+                          void importYoutube(url, active.id)
+                        }
+                        handle={editor}
+                        notes={w.notes}
+                      />
+                    </div>
+                    <NoteTranscripts
+                      ctx={ctx}
+                      note={active}
+                      onImport={importYoutube}
                     />
                   </div>
+                  {active.body.length === 0 && (
+                    <div className="editor-hint">
+                      Start with an idea. Markdown takes care of the rest.
+                      <br />
+                      <small>
+                        Type # for a heading, [[ to link a note, or use Ctrl P
+                        for commands.
+                      </small>
+                    </div>
+                  )}
+                </article>
+              </div>
+              <div className="editor-bottom-toolbar">
+                <div className="inline-actions">
+                  <IconButton
+                    label="Add attachment"
+                    onClick={() => setDialog({ type: "attachments" })}
+                  >
+                    <Paperclip size={15} />
+                  </IconButton>
+                  <button
+                    onClick={() =>
+                      setDialog({
+                        type: "definition",
+                        value: selection,
+                        parentId: subjectOf(w, active.containerId)?.id,
+                      })
+                    }
+                  >
+                    <BookA size={14} /> Define{" "}
+                    {selection ? "selection" : "a term"}
+                  </button>
+                  {selection && (
+                    <>
+                      <button
+                        onClick={() =>
+                          setDialog({ type: "citation", value: selection })
+                        }
+                      >
+                        <Link2 size={14} /> Cite
+                      </button>
+                      <button
+                        onClick={() =>
+                          setDialog({ type: "review-card", value: selection })
+                        }
+                      >
+                        <Layers size={14} /> Review
+                      </button>
+                      <button
+                        onClick={() =>
+                          setDialog({ type: "annotation", value: selection })
+                        }
+                      >
+                        <MessageSquare size={14} /> Annotate
+                      </button>
+                    </>
+                  )}
                 </div>
-                {active.body.length === 0 && (
-                  <div className="editor-hint">
-                    Start with an idea. Markdown takes care of the rest.
-                    <br />
-                    <small>
-                      Type # for a heading, [[ to link a note, or use Ctrl P for
-                      commands.
-                    </small>
-                  </div>
-                )}
-              </article>
-            </div>
-            <div className="editor-bottom-toolbar">
-              <div className="inline-actions">
-                <IconButton
-                  label="Add attachment"
-                  onClick={() => setDialog({ type: "attachments" })}
-                >
-                  <Paperclip size={15} />
-                </IconButton>
                 <button
-                  onClick={() =>
-                    setDialog({
-                      type: "definition",
-                      value: selection,
-                      parentId: subjectOf(w, active.containerId)?.id,
-                    })
-                  }
+                  onClick={() => setDialog({ type: "publish", id: active.id })}
                 >
-                  <BookA size={14} /> Define{" "}
-                  {selection ? "selection" : "a term"}
+                  <Globe size={13} /> Publish
                 </button>
-                {selection && (
-                  <>
-                    <button
-                      onClick={() =>
-                        setDialog({ type: "citation", value: selection })
-                      }
-                    >
-                      <Link2 size={14} /> Cite
-                    </button>
-                    <button
-                      onClick={() =>
-                        setDialog({ type: "review-card", value: selection })
-                      }
-                    >
-                      <Layers size={14} /> Review
-                    </button>
-                    <button
-                      onClick={() =>
-                        setDialog({ type: "annotation", value: selection })
-                      }
-                    >
-                      <MessageSquare size={14} /> Annotate
-                    </button>
-                  </>
-                )}
               </div>
-              <button
-                onClick={() => setDialog({ type: "publish", id: active.id })}
-              >
-                <Globe size={13} /> Publish
-              </button>
-            </div>
-          </>
-        ) : view === "collections" ? (
-          <div
-            className={
-              "welcome" +
-              (w.settings.dismissedIntroductions?.collections
-                ? " welcome-compact"
-                : "")
-            }
-          >
-            {w.settings.dismissedIntroductions?.collections ? (
-              <h1>Collections</h1>
-            ) : (
-              <>
-                <IconButton
-                  label="Dismiss this tab’s introduction"
-                  onClick={() =>
-                    mutate((s) => {
-                      (s.settings.dismissedIntroductions ??= {}).collections =
-                        true;
-                    })
-                  }
-                >
-                  <X size={16} />
-                </IconButton>
-                <div className="welcome-mark">
-                  <BookOpen size={40} strokeWidth={1.2} />
-                </div>
-                <span className="eyebrow">A PLACE FOR UNDERSTANDING</span>
-                <h1>Make room for your ideas.</h1>
-                <p>
-                  Gather your notes. Connect the dots.
-                  <br />
-                  Build a little understanding, every day.
-                </p>
-              </>
-            )}
-            <div className="welcome-actions">
-              <button className="primary" onClick={() => addNote()}>
-                <PenLine size={17} /> Start writing
-              </button>
-              <button
-                className="secondary"
-                onClick={() => setDialog({ type: "import" })}
-              >
-                <Upload size={17} /> Import notes
-              </button>
-            </div>
-            <button
-              className="text-button"
-              onClick={() => setDialog({ type: "container" })}
+            </>
+          ) : view === "collections" ? (
+            <div
+              className={
+                "welcome" +
+                (w.settings.dismissedIntroductions?.collections
+                  ? " welcome-compact"
+                  : "")
+              }
             >
-              Create your first collection <ArrowRight size={14} />
-            </button>
-            {demo && (
-              <button
-                className="sample-button"
-                onClick={() => {
-                  mutate((s) => {
-                    const sample = sampleWorkspace();
-                    Object.assign(s, sample, {
-                      revision: s.revision,
-                      settings: {
-                        ...sample.settings,
-                        dismissedIntroductions:
-                          s.settings.dismissedIntroductions,
-                      },
-                    });
-                  });
-                  const n = wRef.current!.notes[0];
-                  setExpanded(
-                    ancestry(wRef.current!, n.containerId).map((c) => c.id),
-                  );
-                  openNote(n.id);
-                  toast(
-                    "Loaded a clearly labeled sample workspace. All edits stay on this device.",
-                  );
-                }}
-              >
-                Explore an editable sample collection <ChevronRight size={14} />
-              </button>
-            )}
-            {!w.settings.dismissedIntroductions?.collections && (
-              <div className="welcome-principles">
-                <span>
-                  <Lock size={14} /> Private by default
-                </span>
-                <span>
-                  <FileText size={14} /> Yours in Markdown
-                </span>
-                <span>
-                  <Link2 size={14} /> Connected by ideas
-                </span>
+              {w.settings.dismissedIntroductions?.collections ? (
+                <h1>Collections</h1>
+              ) : (
+                <>
+                  <IconButton
+                    label="Dismiss this tab’s introduction"
+                    onClick={() =>
+                      mutate((s) => {
+                        (s.settings.dismissedIntroductions ??= {}).collections =
+                          true;
+                      })
+                    }
+                  >
+                    <X size={16} />
+                  </IconButton>
+                  <div className="welcome-mark">
+                    <BookOpen size={40} strokeWidth={1.2} />
+                  </div>
+                  <span className="eyebrow">A PLACE FOR UNDERSTANDING</span>
+                  <h1>Make room for your ideas.</h1>
+                  <p>
+                    Gather your notes. Connect the dots.
+                    <br />
+                    Build a little understanding, every day.
+                  </p>
+                </>
+              )}
+              <div className="welcome-actions">
+                <button className="primary" onClick={() => addNote()}>
+                  <PenLine size={17} /> Start writing
+                </button>
+                <button
+                  className="secondary"
+                  onClick={() => setDialog({ type: "import" })}
+                >
+                  <Upload size={17} /> Import notes
+                </button>
               </div>
-            )}
-          </div>
-        ) : (
-          <WorkspaceViews
-            ctx={ctx}
-            view={view}
-            query={treeQuery}
-            setQuery={setTreeQuery}
+              <button
+                className="text-button"
+                onClick={() => setDialog({ type: "container" })}
+              >
+                Create your first collection <ArrowRight size={14} />
+              </button>
+              {demo && (
+                <button
+                  className="sample-button"
+                  onClick={() => {
+                    mutate((s) => {
+                      const sample = sampleWorkspace();
+                      Object.assign(s, sample, {
+                        revision: s.revision,
+                        settings: {
+                          ...sample.settings,
+                          dismissedIntroductions:
+                            s.settings.dismissedIntroductions,
+                        },
+                      });
+                    });
+                    const n = wRef.current!.notes[0];
+                    setExpanded(
+                      ancestry(wRef.current!, n.containerId).map((c) => c.id),
+                    );
+                    openNote(n.id);
+                    toast(
+                      "Loaded a clearly labeled sample workspace. All edits stay on this device.",
+                    );
+                  }}
+                >
+                  Explore an editable sample collection{" "}
+                  <ChevronRight size={14} />
+                </button>
+              )}
+              {!w.settings.dismissedIntroductions?.collections && (
+                <div className="welcome-principles">
+                  <span>
+                    <Lock size={14} /> Private by default
+                  </span>
+                  <span>
+                    <FileText size={14} /> Yours in Markdown
+                  </span>
+                  <span>
+                    <Link2 size={14} /> Connected by ideas
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <WorkspaceViews
+              ctx={ctx}
+              view={view}
+              query={treeQuery}
+              setQuery={setTreeQuery}
+            />
+          )}
+          <footer className="status-bar">
+            <span
+              className={
+                "save-state " +
+                (saveStatus.includes("failed") || conflict ? "danger" : "")
+              }
+              role="status"
+            >
+              {saveStatus.includes("Saved") ? (
+                <Check size={12} />
+              ) : saveStatus.includes("Offline") ? (
+                <CloudOff size={12} />
+              ) : (
+                <Cloud size={12} />
+              )}{" "}
+              {saveStatus}
+            </span>
+            <div>
+              <span>
+                {active?.body.trim()
+                  ? active.body.trim().split(/\s+/u).length
+                  : 0}{" "}
+                words
+              </span>
+              <span>{active?.body.length ?? 0} characters</span>
+              <span>Markdown</span>
+              <button
+                title="Keyboard shortcuts"
+                onClick={() => setView("settings")}
+              >
+                <Command size={12} />
+              </button>
+            </div>
+          </footer>
+        </main>
+        {view === "collections" && rightNote && (
+          <SideNotePane
+            ctx={{
+              ...ctx,
+              active: rightNote,
+              editor: rightEditor,
+              selection: rightSelection,
+              setSelection: setRightSelection,
+            }}
+            canBack={historyTarget("right", -1) >= 0}
+            canForward={historyTarget("right", 1) >= 0}
+            onBack={() => navigateNote("right", -1)}
+            onForward={() => navigateNote("right", 1)}
+            note={rightNote}
+            handle={rightEditor}
+            selection={rightSelection}
+            onSelection={setRightSelection}
+            focused={activePane === "right"}
+            onFocus={() => setActivePane("right")}
+            onClose={() => {
+              flushRender();
+              setRightNoteId("");
+              setActivePane("left");
+            }}
           />
         )}
-        <footer className="status-bar">
-          <span
-            className={
-              "save-state " +
-              (saveStatus.includes("failed") || conflict ? "danger" : "")
-            }
-            role="status"
-          >
-            {saveStatus.includes("Saved") ? (
-              <Check size={12} />
-            ) : saveStatus.includes("Offline") ? (
-              <CloudOff size={12} />
-            ) : (
-              <Cloud size={12} />
-            )}{" "}
-            {saveStatus}
-          </span>
-          <div>
-            <span>
-              {active?.body.trim()
-                ? active.body.trim().split(/\s+/u).length
-                : 0}{" "}
-              words
-            </span>
-            <span>{active?.body.length ?? 0} characters</span>
-            <span>Markdown</span>
-            <button
-              title="Keyboard shortcuts"
-              onClick={() => setView("settings")}
-            >
-              <Command size={12} />
-            </button>
-          </div>
-        </footer>
-      </main>
+      </div>
       {!zen && right && (
         <>
           <div
@@ -2399,7 +3137,7 @@ export default function WorkspaceApp({
               className={
                 "inspector-tabs " +
                 (!w.settings.toolsCompact ? "tools-labeled " : "") +
-                (tour && tourStep === 2 ? "tour-target" : "")
+                ""
               }
               role="tablist"
               aria-label="Inspector tools"
@@ -2452,7 +3190,7 @@ export default function WorkspaceApp({
             >
               {w.settings.toolsCompact ? "Show tool labels" : "Compact tools"}
             </button>
-            {tour && tourStep === 2 && (
+            {tour && tourStep === 4 && (
               <p className="tool-description" role="status">
                 {toolDescriptions[inspector]}
               </p>
@@ -2491,6 +3229,7 @@ export default function WorkspaceApp({
         />
       )}
       {view === "collections" &&
+        activePane === "left" &&
         active &&
         (mode === "reading" || selection.trim()) &&
         !dialog && (
@@ -2535,6 +3274,9 @@ export default function WorkspaceApp({
                 >
                   <Link2 size={14} />
                   Insert / edit link
+                </button>
+                <button onClick={() => ctx.openChat(selectedText, active.id)}>
+                  <Sparkles size={14} /> Add to Chat
                 </button>
               </>
             )}
@@ -2591,12 +3333,59 @@ export default function WorkspaceApp({
           step={tourStep}
           onStep={(step) => {
             setTourStep(step);
-            if (step === 2) {
+            setZen(false);
+            if (step >= 1 && step <= 3) {
+              setViewState("collections");
+              setLeft(step !== 3 || innerWidth > 1050);
+              if (innerWidth <= 1050) setRight(false);
+            }
+            if (step === 4) {
               setRight(true);
               if (innerWidth <= 1050) setLeft(false);
             }
           }}
           onClose={() => setTour(false)}
+        />
+      )}
+      {blockBrowser && focused && (
+        <Modal
+          title={`${focused.title} ${blockBrowser === "whiteboard" ? "whiteboards" : "code blocks"}`}
+          description="Open the file containing a block."
+          onClose={() => setBlockBrowser(null)}
+        >
+          <div className="block-destinations">
+            {collectionBlocks
+              .filter(
+                ({ block }) =>
+                  (block.language === "whiteboard") ===
+                  (blockBrowser === "whiteboard"),
+              )
+              .map(({ note, block }) => (
+                <button
+                  key={note.id + block.id}
+                  onClick={() => {
+                    openNote(note.id);
+                    setBlockBrowser(null);
+                  }}
+                >
+                  <strong>
+                    {block.title ||
+                      (block.language === "whiteboard"
+                        ? "Whiteboard"
+                        : "Code block")}
+                  </strong>
+                  <small>{note.title}</small>
+                </button>
+              ))}
+          </div>
+        </Modal>
+      )}
+      {blockDestination && (
+        <BlockDestination
+          ctx={ctx}
+          block={blockDestination.block}
+          sourceNoteId={blockDestination.noteId}
+          onClose={() => setBlockDestination(null)}
         />
       )}
       {dialog && dialog.type !== "workspaces" && (
@@ -2632,6 +3421,11 @@ export default function WorkspaceApp({
             {itemActions(contextMenu.id).map((item, i) =>
               item === "separator" ? (
                 <div className="menu-separator" key={i} />
+              ) : "info" in item && item.info ? (
+                <div className="menu-info" key={i}>
+                  <item.icon size={14} />
+                  <span>{item.label}</span>
+                </div>
               ) : (
                 <button
                   key={i}

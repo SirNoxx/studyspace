@@ -1,5 +1,13 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { codeBlockExtension } from "./EditorCodeBlocks";
+import {
+  newCodeBlock,
+  type BlockAction,
+  type StudyCodeBlock,
+} from "@/lib/code-blocks";
+import { newWhiteboard } from "@/lib/whiteboard";
+import ModuleGallery from "./ModuleGallery";
 import { EditorState, Compartment, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -56,6 +64,9 @@ export default function Editor({
   notes,
   attachments,
   demo,
+  onChat,
+  onYoutubePaste,
+  onBlockAction,
 }: {
   id: string;
   body: string;
@@ -69,15 +80,44 @@ export default function Editor({
   notes: { id: string; title: string }[];
   attachments: Attachment[];
   demo: boolean;
+  onChat?: (text: string) => void;
+  onYoutubePaste?: (url: string) => void;
+  onBlockAction?: (action: BlockAction, block: StudyCodeBlock) => void;
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [modules, setModules] = useState(false);
   const parent = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null),
     states = useRef(new Map<string, EditorState>()),
     templateState = useRef<EditorState | null>(null),
     active = useRef(id);
-  const callbacks = useRef({ onChange, onSelection, onDefinition, onAttach });
-  callbacks.current = { onChange, onSelection, onDefinition, onAttach };
+  const callbacks = useRef({
+    onChange,
+    onSelection,
+    onDefinition,
+    onAttach,
+    onChat,
+    onYoutubePaste,
+    onBlockAction,
+  });
+  callbacks.current = {
+    onChange,
+    onSelection,
+    onDefinition,
+    onAttach,
+    onChat,
+    onYoutubePaste,
+    onBlockAction,
+  };
   const compartment = useRef(new Compartment());
+  const embeddedBlocks = useRef<ReturnType<typeof codeBlockExtension> | null>(
+    null,
+  );
+  if (!embeddedBlocks.current)
+    embeddedBlocks.current = codeBlockExtension(
+      (text) => callbacks.current.onChat?.(text),
+      (action, block) => callbacks.current.onBlockAction?.(action, block),
+    );
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const definitionsRef = useRef(definitions);
@@ -186,7 +226,10 @@ export default function Editor({
       },
       { decorations: (v) => v.decorations },
     );
-    return [visual];
+    return [
+      visual,
+      ...(modeRef.current === "live" ? [embeddedBlocks.current!] : []),
+    ];
   };
   useEffect(() => {
     if (!parent.current) return;
@@ -286,6 +329,8 @@ export default function Editor({
                 callbacks.current.onAttach(files);
                 return true;
               }
+              const text = e.clipboardData?.getData("text/plain").trim();
+              if (text) callbacks.current.onYoutubePaste?.(text);
               return false;
             },
             drop: (e) => {
@@ -346,6 +391,7 @@ export default function Editor({
         editor.dispatch({
           changes: { from: s.from, to: s.to, insert: text },
           selection: { anchor: s.from + text.length },
+          scrollIntoView: true,
         });
         editor.focus();
       },
@@ -393,8 +439,30 @@ export default function Editor({
       }
       v.dispatch({ effects: compartment.current.reconfigure(extensions()) });
     } else if (v.state.doc.toString() !== body) {
+      // Preserve embedded editors and their focus when another pane or a save
+      // refresh changes only part of the note. Replacing the entire document
+      // unnecessarily removes every embedded widget from the view.
+      const previous = v.state.doc.toString();
+      let from = 0;
+      while (
+        from < previous.length &&
+        from < body.length &&
+        previous[from] === body[from]
+      )
+        from++;
+      let oldEnd = previous.length,
+        newEnd = body.length;
+      while (
+        oldEnd > from &&
+        newEnd > from &&
+        previous[oldEnd - 1] === body[newEnd - 1]
+      ) {
+        oldEnd--;
+        newEnd--;
+      }
       v.dispatch({
-        changes: { from: 0, to: v.state.doc.length, insert: body },
+        changes: { from, to: oldEnd, insert: body.slice(from, newEnd) },
+        annotations: Transaction.remote.of(true),
       });
     }
   }, [id, body]);
@@ -403,5 +471,83 @@ export default function Editor({
       effects: compartment.current.reconfigure(extensions()),
     });
   }, [mode, definitions, attachments]);
-  return <div className={"editor-host mode-" + mode} ref={parent} />;
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", key);
+    };
+  }, [menu]);
+  return (
+    <>
+      <div
+        className={"editor-host mode-" + mode}
+        ref={parent}
+        onContextMenu={(event) => {
+          if ((event.target as HTMLElement).closest(".code-cell-widget"))
+            return;
+          event.preventDefault();
+          const position = view.current?.posAtCoords({
+            x: event.clientX,
+            y: event.clientY,
+          });
+          if (position != null)
+            view.current?.dispatch({ selection: { anchor: position } });
+          setMenu({
+            x: Math.min(event.clientX, innerWidth - 200),
+            y: Math.max(8, Math.min(event.clientY, innerHeight - 130)),
+          });
+        }}
+      />
+      {menu && (
+        <div
+          className="note-insert-menu"
+          role="menu"
+          aria-label="Insert into note"
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => {
+              setMenu(null);
+              setModules(true);
+            }}
+          >
+            Add a module
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              handle.current?.insert(newCodeBlock());
+              setMenu(null);
+            }}
+          >
+            Add code block
+          </button>
+          <button
+            role="menuitem"
+            onClick={() => {
+              handle.current?.insert(newWhiteboard());
+              setMenu(null);
+            }}
+          >
+            Add whiteboard
+          </button>
+        </div>
+      )}
+      {modules && (
+        <ModuleGallery
+          onInsert={(text) => handle.current?.insert(text)}
+          onClose={() => setModules(false)}
+        />
+      )}
+    </>
+  );
 }

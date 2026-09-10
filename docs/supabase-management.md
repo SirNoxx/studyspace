@@ -2,14 +2,14 @@
 
 ## Current state
 
-The running `http://127.0.0.1:3000/demo` workspace stores notes and files in this browser's IndexedDB. No `.env.local` Supabase credentials were present during this update, and no hosted migration, deployment, or live AI request was performed. A publication saved in demo mode is a local preview; it is not internet-public.
+The `http://127.0.0.1:3000/demo` workspace stores notes and files in this browser's IndexedDB. On September 9, 2026, all twelve SQL migrations were installed and verified in project `nnlhqstucyjoioyraxpf`; see the [database setup and verification guide](public-database-setup.md). Application credentials are still absent from `.env.local`, and no web deployment or live AI request was made. A publication saved in demo mode is a local preview; it is not internet-public.
 
 The application already contains the Supabase integration. The browser client in `src/lib/supabase/browser.ts` handles sign-in. The server client in `src/lib/supabase/server.ts` verifies sessions with Supabase Auth. Authenticated API routes validate ownership and use a server-only service credential for transactional PostgreSQL operations and private Storage. Service credentials bypass RLS, so route-level ownership checks and restricted SQL functions are essential; they must never be exposed to the browser.
 
 ## Connect your project
 
 1. Create or select your Supabase project. Copy `.env.example` to `.env.local` in the Studyspace repository. Enter the project's API URL as `NEXT_PUBLIC_SUPABASE_URL`, its browser publishable/anon key as `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and its server service-role key as `SUPABASE_SERVICE_ROLE_KEY`. Keep these in local/deployment environment configuration. Set `NEXT_PUBLIC_APP_URL` to the exact Studyspace origin.
-2. Apply the SQL migrations in order using the Supabase CLI. For a new database, all nine migrations are required. For an existing Studyspace database with migrations 001–008, this release adds only `202609080009_discover_browsing.sql`: one index and a restricted discovery function. It does not rewrite or delete notes, files, publications, or cards. Use your actual project reference below:
+2. Apply the SQL migrations in order using the Supabase CLI. A new database requires all twelve migrations. The connected project `nnlhqstucyjoioyraxpf` already has them; existing installations apply only pending files. The [database guide](public-database-setup.md) lists each migration and the validation checks. Use your actual project reference below:
 
    ```powershell
    npx supabase@2.117.0 login
@@ -53,4 +53,4 @@ Database backups do not include Storage file bytes. Back up both, and rehearse r
 
 ## Remaining external setup
 
-A configured Supabase project, Auth email delivery, persistent worker, hosted application, and live integration/restore checks are still required for internet-public research. The local production server is only reachable on this computer. AI suggestions additionally require server-only `AI_API_KEY` and `AI_MODEL`; manual cards, dictionary entries, and the writing workspace remain usable without AI. Local SQL tests use PGlite and do not substitute for verification against real Supabase Auth and Storage.
+The Supabase database is installed and SQL-verified. Application credentials, Auth email delivery, a persistent worker, a hosted application, and live Auth/Storage integration and restore checks are still required for internet-public research. The local production server is only reachable on this computer. AI suggestions additionally require server-only `AI_API_KEY` and `AI_MODEL`; manual cards, dictionary entries, and the writing workspace remain usable without AI. Local PGlite tests and hosted SQL role tests do not substitute for verification against real Supabase Auth and Storage HTTP services.

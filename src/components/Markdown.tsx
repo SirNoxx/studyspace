@@ -2,6 +2,7 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
+import { visit } from "unist-util-visit";
 import rehypeKatex from "rehype-katex";
 import {
   useEffect,
@@ -19,6 +20,26 @@ import {
 } from "@/lib/markdown";
 import type { Definition, Attachment, Note } from "@/lib/model";
 import AttachmentMedia, { findAttachment } from "./AttachmentMedia";
+import Whiteboard from "./Whiteboard";
+import NoteModule from "./NoteModule";
+function titledBlocks() {
+  return (tree: any) =>
+    visit(tree, "code", (node: any) => {
+      const match = /(?:^|\s)title:(\S+)/.exec(node.meta ?? "");
+      if (!match) return;
+      try {
+        node.data = {
+          ...node.data,
+          hProperties: {
+            ...node.data?.hProperties,
+            "data-study-title": decodeURIComponent(match[1]).slice(0, 120),
+          },
+        };
+      } catch {
+        /* Preserve malformed imported titles as source. */
+      }
+    });
+}
 function Diagram({ code }: { code: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState(false);
@@ -180,7 +201,7 @@ export default function Markdown({
         urlTransform={(url) =>
           url.startsWith("attachment:") ? url : defaultUrlTransform(url)
         }
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, remarkMath, titledBlocks]}
         rehypePlugins={[rehypeKatex]}
         components={{
           input: ({ checked }) => (
@@ -337,13 +358,69 @@ export default function Markdown({
           pre: ({ children }) => {
             const child = Children.toArray(children)[0];
             if (
-              isValidElement<{ className?: string; children?: ReactNode }>(
-                child,
-              ) &&
+              isValidElement<{
+                className?: string;
+                children?: ReactNode;
+                "data-study-title"?: string;
+              }>(child) &&
+              child.props.className === "language-module"
+            )
+              return (
+                <NoteModule
+                  readOnly
+                  block={{
+                    id: "preview",
+                    language: "module",
+                    code: String(child.props.children),
+                    title: child.props["data-study-title"],
+                    collapsed: false,
+                    from: 0,
+                    to: 0,
+                  }}
+                />
+              );
+            if (
+              isValidElement<{
+                className?: string;
+                children?: ReactNode;
+                "data-study-title"?: string;
+              }>(child) &&
+              child.props.className === "language-whiteboard"
+            )
+              return (
+                <Whiteboard
+                  readOnly
+                  block={{
+                    id: "preview",
+                    language: "whiteboard",
+                    title: child.props["data-study-title"],
+                    code: String(child.props.children),
+                    collapsed: false,
+                    from: 0,
+                    to: 0,
+                  }}
+                />
+              );
+            if (
+              isValidElement<{
+                className?: string;
+                children?: ReactNode;
+                "data-study-title"?: string;
+              }>(child) &&
               child.props.className === "language-mermaid"
             )
               return <Diagram code={String(child.props.children)} />;
-            return <pre>{children}</pre>;
+            const title = isValidElement<{ "data-study-title"?: string }>(child)
+              ? child.props["data-study-title"]
+              : undefined;
+            return title ? (
+              <figure className="reading-code-block">
+                <figcaption>{title}</figcaption>
+                <pre>{children}</pre>
+              </figure>
+            ) : (
+              <pre>{children}</pre>
+            );
           },
           code: ({ className, children }) => (
             <code className={className}>

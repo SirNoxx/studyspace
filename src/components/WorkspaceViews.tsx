@@ -16,6 +16,7 @@ import {
   Bookmark,
   Globe,
   FileText,
+  FolderInput,
   ChevronRight,
   Settings,
   Sun,
@@ -74,6 +75,11 @@ import {
   JournalIcon,
 } from "./WorkspaceEnhancements";
 import StudyGroups from "./StudyGroups";
+import Profile from "./social/Profile";
+import CommunityFeed from "./social/Feed";
+import Messages from "./social/Messages";
+import Shared from "./social/Shared";
+import Moderation from "./social/Moderation";
 import JournalEditor from "./JournalEditor";
 import {
   categories,
@@ -102,6 +108,7 @@ export default function WorkspaceViews({
     [cardGroup, setCardGroup] = useState("all"),
     [discoverCategory, setDiscoverCategory] = useState("all"),
     [discoverSort, setDiscoverSort] = useState("newest"),
+    [discoverMode, setDiscoverMode] = useState("community"),
     [settingsTab, setSettingsTab] = useState("Appearance"),
     [remote, setRemote] = useState<Snapshot[]>([]),
     [loading, setLoading] = useState(false),
@@ -194,7 +201,9 @@ export default function WorkspaceViews({
             {(
               {
                 search: "Search",
-                dictionary: "Dictionary",
+                dictionary: ctx.focus
+                  ? `${w.containers.find((c) => c.id === ctx.focus)?.title ?? "Collection"} dictionary`
+                  : "Dictionary",
                 sources: "Sources",
                 journal: "Journal",
                 review: "Review",
@@ -264,6 +273,128 @@ export default function WorkspaceViews({
       ))}
     </div>
   );
+  if (["profile", "messages", "shared"].includes(view)) {
+    return (
+      <div className="view-scroll">
+        {ctx.demo ? (
+          <section className="social-page">
+            <h1>
+              {view === "profile"
+                ? "Your profile"
+                : view === "shared"
+                  ? "Shared collections"
+                  : "Messages"}
+            </h1>
+            <p>
+              Sign in to create your community profile, collaborate with other
+              students, and send private messages. Your demo notes remain on
+              this device.
+            </p>
+            <a className="primary" href="/auth">
+              Sign in to Studyspace
+            </a>
+          </section>
+        ) : (
+          <>
+            {view === "profile" ? (
+              <>
+                <Profile />
+                <Moderation />
+              </>
+            ) : view === "messages" ? (
+              <Messages />
+            ) : (
+              <Shared workspace={w} />
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+  if (view === "quick-notes") {
+    const notes = w.notes
+      .filter(
+        (n) =>
+          n.kind === "quick" &&
+          !n.trashed &&
+          !n.archived &&
+          (n.title + " " + n.body).toLowerCase().includes(query.toLowerCase()),
+      )
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return (
+      <div className="view-scroll">
+        <div className="workspace-view">
+          {header(
+            "CATCH A THOUGHT",
+            "Quick notes",
+            "A separate space for fleeting thoughts. Move a note into a collection when you are ready to organize it.",
+            <button
+              className="primary"
+              onClick={() => setDialog({ type: "quick" })}
+            >
+              <Plus size={16} />
+              New quick note
+            </button>,
+          )}
+          <input
+            aria-label="Search quick notes"
+            placeholder="Find a quick note…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div className="quick-notes-list">
+            {notes.map((n) => (
+              <article key={n.id}>
+                <button
+                  className="quick-note-open"
+                  onClick={() => openNote(n.id)}
+                >
+                  <strong>{n.title || "Quick note"}</strong>
+                  <span>
+                    {n.body.replace(/[#*`]/g, "").slice(0, 160) || "Empty note"}
+                  </span>
+                  <small>{new Date(n.updatedAt).toLocaleDateString()}</small>
+                </button>
+                <div>
+                  <button
+                    aria-label={"Move " + n.title}
+                    onClick={() =>
+                      setDialog({
+                        type: "move",
+                        id: n.id,
+                        destination: general(w).id,
+                      })
+                    }
+                  >
+                    <FolderInput size={15} />
+                    Move
+                  </button>
+                  <button
+                    aria-label={"Trash " + n.title}
+                    onClick={() =>
+                      mutate(
+                        (w) => trashItems(w, [n.id]),
+                        "Quick note moved to Trash.",
+                      )
+                    }
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!notes.length && (
+            <p className="empty-hint">
+              {query
+                ? "No quick notes match your search."
+                : "Nothing to organize yet. Capture a thought whenever you need to."}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (view === "search")
     return (
       <div className="view-scroll">
@@ -354,7 +485,9 @@ export default function WorkspaceViews({
         <div className="workspace-view">
           {header(
             "WORDS BECOME UNDERSTANDING",
-            ctx.focus ? "Subject dictionary" : "My global dictionary",
+            ctx.focus
+              ? `${w.containers.find((c) => c.id === ctx.focus)?.title ?? "Collection"} dictionary`
+              : "My global dictionary",
             "Your own meanings, connected to the subjects they belong to.",
             <button
               className="primary"
@@ -1126,184 +1259,205 @@ export default function WorkspaceViews({
       );
     return (
       <div className="view-scroll">
-        <div className="workspace-view discover-view">
-          {header(
-            "LEARN FROM THE WHOLE PICTURE",
-            "Discover a different perspective",
-            "Follow someone’s research, from the first idea to the evidence behind it.",
-          )}
-          <div className="large-search">
-            <Search size={20} />
-            <input
-              value={query}
-              aria-label="Search public research"
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="A topic, a question, an author…"
-            />
-          </div>
-          <div className="discover-controls">
-            <button
-              className="primary"
-              onClick={() => setDialog({ type: "publish-picker" })}
-            >
-              <Globe size={15} />
-              Publish a collection or folder
-            </button>
-            <select
-              aria-label="Browse research category"
-              value={discoverCategory}
-              onChange={(e) => setDiscoverCategory(e.target.value)}
-            >
-              <option value="all">All categories</option>
-              {categories.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-            <select
-              aria-label="Discover order"
-              value={discoverSort}
-              onChange={(e) => setDiscoverSort(e.target.value)}
-            >
-              <option value="newest">Newest research</option>
-              <option value="popular">Popular · study copies</option>
-            </select>
-          </div>
-          <p className="muted">
-            Popularity counts currently saved independent study copies of a
-            publication.
-          </p>
-          {ctx.demo && (
-            <p className="demo-disclosure">
-              <Globe size={15} /> Local demo publications only. Nothing here is
-              published to the internet.
+        <div className="social-page social-tabs" aria-label="Discover sections">
+          <button
+            aria-pressed={discoverMode === "community"}
+            onClick={() => setDiscoverMode("community")}
+          >
+            Community
+          </button>
+          <button
+            aria-pressed={discoverMode === "publications"}
+            onClick={() => setDiscoverMode("publications")}
+          >
+            Published study materials
+          </button>
+          <button onClick={() => setDialog({ type: "publish-picker" })}>
+            Publish your work
+          </button>
+        </div>
+        {discoverMode === "community" ? (
+          <CommunityFeed />
+        ) : (
+          <div className="workspace-view discover-view">
+            {header(
+              "LEARN FROM THE WHOLE PICTURE",
+              "Discover a different perspective",
+              "Follow someone’s research, from the first idea to the evidence behind it.",
+            )}
+            <div className="large-search">
+              <Search size={20} />
+              <input
+                value={query}
+                aria-label="Search public research"
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="A topic, a question, an author…"
+              />
+            </div>
+            <div className="discover-controls">
+              <button
+                className="primary"
+                onClick={() => setDialog({ type: "publish-picker" })}
+              >
+                <Globe size={15} />
+                Publish a collection or folder
+              </button>
+              <select
+                aria-label="Browse research category"
+                value={discoverCategory}
+                onChange={(e) => setDiscoverCategory(e.target.value)}
+              >
+                <option value="all">All categories</option>
+                {categories.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>
+              <select
+                aria-label="Discover order"
+                value={discoverSort}
+                onChange={(e) => setDiscoverSort(e.target.value)}
+              >
+                <option value="newest">Newest research</option>
+                <option value="popular">Popular · study copies</option>
+              </select>
+            </div>
+            <p className="muted">
+              Popularity counts currently saved independent study copies of a
+              publication.
             </p>
-          )}
-          {loading && <p role="status">Finding published research…</p>}
-          {remoteError && <p role="alert">{remoteError}</p>}
-          <div className="discovery-list">
-            {publications.map((p) => (
-              <article className="discovery-card" key={p.id}>
-                <p className="muted">
-                  {p.category ?? "General research"} ·{" "}
-                  {ctx.demo
-                    ? w.copies.filter(
-                        (c) => c.publicationId === p.publicationId,
-                      ).length
-                    : (p.popularity ?? 0)}{" "}
-                  study copies · {publicationCounts(p).sources} sources
-                </p>
-                <div className="discovery-card-top">
-                  <span className="collection-cover">
-                    <BookA size={28} strokeWidth={1.3} />
-                  </span>
-                  <span className="badge">COLLECTION · V{p.version}</span>
-                </div>
-                <h2>
-                  <button
-                    onClick={() =>
-                      ctx.demo
-                        ? setDialog({
-                            type: "reader",
-                            publicationId: p.publicationId,
-                          })
-                        : location.assign("/p/" + p.publicationId)
-                    }
-                  >
-                    {p.title}
-                  </button>
-                </h2>
-                <p>
-                  {p.description ||
-                    "A published collection of notes and ideas."}
-                </p>
-                <div className="discovery-meta">
-                  <span>{p.author}</span>
-                  <span>{p.notes.length} notes</span>
-                </div>
-                <div className="discovery-actions">
-                  <button
-                    onClick={() =>
-                      mutate((s) => {
-                        if (!s.bookmarks.includes(p.publicationId))
-                          s.bookmarks.push(p.publicationId);
-                      }, "Saved to your library.")
-                    }
-                  >
-                    <Bookmark size={15} /> Save
-                  </button>
-                  {p.allowCopies && (
+            {ctx.demo && (
+              <p className="demo-disclosure">
+                <Globe size={15} /> Local demo publications only. Nothing here
+                is published to the internet.
+              </p>
+            )}
+            {loading && <p role="status">Finding published research…</p>}
+            {remoteError && <p role="alert">{remoteError}</p>}
+            <div className="discovery-list">
+              {publications.map((p) => (
+                <article className="discovery-card" key={p.id}>
+                  <p className="muted">
+                    {p.category ?? "General research"} ·{" "}
+                    {ctx.demo
+                      ? w.copies.filter(
+                          (c) => c.publicationId === p.publicationId,
+                        ).length
+                      : (p.popularity ?? 0)}{" "}
+                    study copies · {publicationCounts(p).sources} sources
+                  </p>
+                  <div className="discovery-card-top">
+                    <span className="collection-cover">
+                      <BookA size={28} strokeWidth={1.3} />
+                    </span>
+                    <span className="badge">COLLECTION · V{p.version}</span>
+                  </div>
+                  <h2>
                     <button
-                      onClick={async () => {
-                        if (!ctx.demo) {
-                          const response = await fetch("/api/publications", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              action: "copy",
+                      onClick={() =>
+                        ctx.demo
+                          ? setDialog({
+                              type: "reader",
                               publicationId: p.publicationId,
-                              idempotencyKey: uid(),
-                            }),
-                          });
-                          const data = await response.json();
-                          if (!response.ok) {
-                            ctx.toast(data.error);
+                            })
+                          : location.assign("/p/" + p.publicationId)
+                      }
+                    >
+                      {p.title}
+                    </button>
+                  </h2>
+                  <p>
+                    {p.description ||
+                      "A published collection of notes and ideas."}
+                  </p>
+                  <div className="discovery-meta">
+                    <span>{p.author}</span>
+                    <span>{p.notes.length} notes</span>
+                  </div>
+                  <div className="discovery-actions">
+                    <button
+                      onClick={() =>
+                        mutate((s) => {
+                          if (!s.bookmarks.includes(p.publicationId))
+                            s.bookmarks.push(p.publicationId);
+                        }, "Saved to your library.")
+                      }
+                    >
+                      <Bookmark size={15} /> Save
+                    </button>
+                    {p.allowCopies && (
+                      <button
+                        onClick={async () => {
+                          if (!ctx.demo) {
+                            const response = await fetch("/api/publications", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                action: "copy",
+                                publicationId: p.publicationId,
+                                idempotencyKey: uid(),
+                              }),
+                            });
+                            const data = await response.json();
+                            if (!response.ok) {
+                              ctx.toast(data.error);
+                              return;
+                            }
+                            location.href = "/w/collection/" + data.containerId;
                             return;
                           }
-                          location.href = "/w/collection/" + data.containerId;
-                          return;
-                        }
-                        try {
-                          const assets = (p.attachments ?? []).map((a) => ({
-                            ...a,
-                            id: uid(),
-                            key: "",
-                          }));
-                          const db = await localDB();
-                          for (const a of p.attachments ?? []) {
-                            const blob = await db.get("assets", a.id),
-                              target = assets.find((x) => x.hash === a.hash);
-                            if (!blob || !target)
-                              throw new Error(
-                                "A published attachment is unavailable on this device.",
+                          try {
+                            const assets = (p.attachments ?? []).map((a) => ({
+                              ...a,
+                              id: uid(),
+                              key: "",
+                            }));
+                            const db = await localDB();
+                            for (const a of p.attachments ?? []) {
+                              const blob = await db.get("assets", a.id),
+                                target = assets.find((x) => x.hash === a.hash);
+                              if (!blob || !target)
+                                throw new Error(
+                                  "A published attachment is unavailable on this device.",
+                                );
+                              await db.put("assets", blob, target.id);
+                            }
+                            mutate((s) => {
+                              const copy = instantiateSnapshot(
+                                s,
+                                p,
+                                uid(),
+                                assets,
                               );
-                            await db.put("assets", blob, target.id);
+                              ctx.setFocus(copy.containerId);
+                            }, "Independent study copy created.");
+                          } catch (e) {
+                            ctx.toast((e as Error).message);
                           }
-                          mutate((s) => {
-                            const copy = instantiateSnapshot(
-                              s,
-                              p,
-                              uid(),
-                              assets,
-                            );
-                            ctx.setFocus(copy.containerId);
-                          }, "Independent study copy created.");
-                        } catch (e) {
-                          ctx.toast((e as Error).message);
-                        }
-                      }}
-                    >
-                      <Copy size={15} /> Make a study copy
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
+                        }}
+                      >
+                        <Copy size={15} /> Make a study copy
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+            {!loading && !publications.length && (
+              <Empty
+                icon={Globe}
+                title={
+                  ctx.demo
+                    ? "Your research can be someone’s starting point."
+                    : "No published research found."
+                }
+              >
+                {ctx.demo
+                  ? "Publish a selected note to explore the local reader and study-copy workflow."
+                  : "Try another topic or publish a selected collection."}
+              </Empty>
+            )}
           </div>
-          {!loading && !publications.length && (
-            <Empty
-              icon={Globe}
-              title={
-                ctx.demo
-                  ? "Your research can be someone’s starting point."
-                  : "No published research found."
-              }
-            >
-              {ctx.demo
-                ? "Publish a selected note to explore the local reader and study-copy workflow."
-                : "Try another topic or publish a selected collection."}
-            </Empty>
-          )}
-        </div>
+        )}
       </div>
     );
   }

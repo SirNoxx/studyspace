@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Studyspace</title>
+    <link rel="stylesheet" href="startup.css" />
+    <script src="startup.js" defer></script>
+  </head>
+  <body>
+    <main aria-labelledby="app-name">
+      <img
+        class="app-icon"
+        src="../build/icon.png"
+        width="80"
+        height="80"
+        alt=""
+      />
+      <h1 id="app-name">Studyspace</h1>
+      <p class="tagline">A little room to think.</p>
+      <div class="status" role="status" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="status-text">Opening your workspace…</span>
+      </div>
+      <p id="detail">Getting your notes ready.</p>
+      <p id="help" hidden>
+        Close this window and open Studyspace again to retry.
+      </p>
+    </main>
+  </body>
+</html>

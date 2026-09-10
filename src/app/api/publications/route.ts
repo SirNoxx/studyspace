@@ -3,7 +3,12 @@ import {
   publishApprovedSnapshot,
 } from "@/lib/server/publish";
 import { z } from "zod";
-import { adminClient, configured, requireUser } from "@/lib/supabase/server";
+import {
+  adminClient,
+  configured,
+  requireUser,
+  sessionClient,
+} from "@/lib/supabase/server";
 import {
   apiError,
   assertSameOrigin,
@@ -60,6 +65,23 @@ export async function GET(request: Request) {
           if (error || !data) throw new Error("Published file unavailable.");
           return new Uint8Array(await data.arrayBuffer());
         });
+        if (process.env.SOCIAL_ENABLED !== "false") {
+          const client = await sessionClient();
+          const {
+            data: { user },
+          } = await client.auth.getUser();
+          if (user) {
+            const { error } = await client.rpc("community_command", {
+              p_action: "download",
+              p_data: { id },
+              p_request: uid(),
+            });
+            if (error)
+              console.warn("social_download_metric_failed", {
+                code: error.code,
+              });
+          }
+        }
         return new Response(stream, {
           headers: {
             "Content-Type": "application/zip",

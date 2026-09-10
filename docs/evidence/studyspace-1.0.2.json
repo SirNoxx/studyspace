@@ -1,0 +1,16 @@
+{
+  "version": "1.0.2",
+  "unitTests": 79,
+  "desktopUnitTests": 9,
+  "browserTests": 13,
+  "typecheck": "passed",
+  "productionBuild": "passed",
+  "packagedSmoke": "passed: immediate-close saving, restart persistence, renderer isolation, settings validation, introduction persistence and updater configuration",
+  "startupSmoke": "passed: normal, delayed, early close, port conflict and cloud without local server",
+  "sourceMatchesBuild": true,
+  "environmentFilesInBundle": 0,
+  "installer": "desktop/release/Studyspace-Setup-1.0.2-x64.exe",
+  "installerBytes": 126524668,
+  "sha256": "88ccaf2e65df624d7ea4e500983601d8448ff6d33ec21d6d7f61b0e5a0346dbd",
+  "published": false
+}

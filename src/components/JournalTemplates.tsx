@@ -1,10 +1,40 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import {
+  Plus,
+  Search,
+  Sunrise,
+  Anchor,
+  Flame,
+  Compass,
+  Code2,
+  Sprout,
+  Orbit,
+  Mountain,
+  BookOpen,
+  Moon,
+} from "lucide-react";
 import type { AppContext } from "./WorkspaceApp";
 import { uid, type JournalTemplate } from "@/lib/model";
 import { Field, Modal } from "./ui";
 import Markdown from "./Markdown";
+import {
+  browseStudyspaceTemplates,
+  studyspaceTemplates,
+} from "@/lib/studyspace-templates";
+
+const motifs = {
+  sunrise: Sunrise,
+  anchor: Anchor,
+  flame: Flame,
+  compass: Compass,
+  code: Code2,
+  sprout: Sprout,
+  orbit: Orbit,
+  mountain: Mountain,
+  book: BookOpen,
+  moon: Moon,
+};
 
 export default function JournalTemplates({
   ctx,
@@ -35,6 +65,16 @@ export default function JournalTemplates({
   const local = (ctx.w.settings.journalTemplates ?? []).filter(
     (t) => t.kind === kind,
   );
+  const originals = page === 0 ? browseStudyspaceTemplates(kind, search) : [];
+  const visible =
+    tab === "saved"
+      ? local
+      : [
+          ...originals,
+          ...remote.filter(
+            (t) => !originals.some((original) => original.id === t.id),
+          ),
+        ];
   useEffect(() => {
     if (tab !== "public") return;
     const controller = new AbortController();
@@ -105,7 +145,7 @@ export default function JournalTemplates({
             setError("");
           }}
         >
-          Public templates
+          Browse templates
         </button>
       </div>
       {tab === "saved" ? (
@@ -136,10 +176,19 @@ export default function JournalTemplates({
           </button>
         </form>
       )}
-      {loading && <p role="status">Loading public templates…</p>}
+      {tab === "public" && kind === "journal" && page === 0 && (
+        <p className="muted">
+          Ten Studyspace originals, plus templates shared by the community.
+          Originals are available offline.
+        </p>
+      )}
+      {loading && <p role="status">Loading community templates…</p>}
       {error && (
         <p role="alert">
           {error}{" "}
+          {tab === "public" &&
+            originals.length > 0 &&
+            "You can still use the Studyspace originals below. "}
           {tab === "public" && (
             <button
               className="text-button"
@@ -151,86 +200,112 @@ export default function JournalTemplates({
         </p>
       )}
       <div className="journal-template-grid">
-        {(tab === "saved" ? local : remote).map((t) => (
-          <article key={t.id}>
-            <h3>{t.title}</h3>
-            {t.author && <small>By {t.author}</small>}
-            <p>{t.body.replace(/[#*_`>]/g, "").slice(0, 160)}</p>
-            <div className="template-card-actions">
-              <button className="secondary" onClick={() => setPreview(t)}>
-                Preview
-              </button>
-              <button className="primary" onClick={() => use(t)}>
-                Use template
-              </button>
-              {tab === "saved" && (
-                <>
-                  <button
-                    className="text-button"
-                    onClick={() => setEdit({ ...t })}
-                  >
-                    Edit
-                  </button>
-                  {!t.publishedId && (
+        {visible.map((t) => {
+          const original = studyspaceTemplates.find(
+            (original) => original.id === t.id,
+          );
+          const Motif = original ? motifs[original.motif] : null;
+          return (
+            <article
+              key={t.id}
+              className={original ? "studyspace-template-card" : undefined}
+            >
+              {original && Motif && (
+                <div
+                  className="template-original-cover"
+                  style={
+                    { "--template-accent": original.color } as CSSProperties
+                  }
+                >
+                  <Motif size={32} strokeWidth={1.5} aria-hidden="true" />
+                  <span>
+                    {original.category}
+                    <small>Studyspace original</small>
+                  </span>
+                </div>
+              )}
+              <h3>{t.title}</h3>
+              {t.author && <small>By {t.author}</small>}
+              <p>
+                {original?.description ??
+                  t.body.replace(/[#*_`>]/g, "").slice(0, 160)}
+              </p>
+              <div className="template-card-actions">
+                <button className="secondary" onClick={() => setPreview(t)}>
+                  Preview
+                </button>
+                <button className="primary" onClick={() => use(t)}>
+                  Use template
+                </button>
+                {tab === "saved" && (
+                  <>
                     <button
                       className="text-button"
-                      disabled={ctx.demo || busy}
-                      title={
-                        ctx.demo
-                          ? "Publishing requires a signed-in cloud workspace"
-                          : "Preview before publishing"
-                      }
-                      onClick={() => setPublish(t)}
+                      onClick={() => setEdit({ ...t })}
                     >
-                      Publish publicly
+                      Edit
                     </button>
-                  )}
-                  {t.publishedId && !ctx.demo && (
+                    {!t.publishedId && (
+                      <button
+                        className="text-button"
+                        disabled={ctx.demo || busy}
+                        title={
+                          ctx.demo
+                            ? "Publishing requires a signed-in cloud workspace"
+                            : "Preview before publishing"
+                        }
+                        onClick={() => setPublish(t)}
+                      >
+                        Publish publicly
+                      </button>
+                    )}
+                    {t.publishedId && !ctx.demo && (
+                      <button
+                        className="text-button"
+                        disabled={busy}
+                        onClick={async () => {
+                          setBusy(true);
+                          setError("");
+                          try {
+                            const r = await fetch(
+                              "/api/journal-templates?id=" + t.publishedId,
+                              { method: "DELETE" },
+                            );
+                            if (!r.ok) throw new Error((await r.json()).error);
+                            const copy = { ...t };
+                            delete copy.publishedId;
+                            save(copy);
+                          } catch (e) {
+                            setError((e as Error).message);
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        Unpublish
+                      </button>
+                    )}
                     <button
                       className="text-button"
                       disabled={busy}
-                      onClick={async () => {
-                        setBusy(true);
-                        setError("");
-                        try {
-                          const r = await fetch(
-                            "/api/journal-templates?id=" + t.publishedId,
-                            { method: "DELETE" },
-                          );
-                          if (!r.ok) throw new Error((await r.json()).error);
-                          const copy = { ...t };
-                          delete copy.publishedId;
-                          save(copy);
-                        } catch (e) {
-                          setError((e as Error).message);
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
+                      onClick={() =>
+                        ctx.mutate((w) => {
+                          w.settings.journalTemplates = (
+                            w.settings.journalTemplates ?? []
+                          ).filter((x) => x.id !== t.id);
+                        }, "Removed from saved templates. Your entries are unchanged.")
+                      }
                     >
-                      Unpublish
+                      Remove saved template
                     </button>
-                  )}
-                  <button
-                    className="text-button"
-                    disabled={busy}
-                    onClick={() =>
-                      ctx.mutate((w) => {
-                        w.settings.journalTemplates = (
-                          w.settings.journalTemplates ?? []
-                        ).filter((x) => x.id !== t.id);
-                      }, "Removed from saved templates. Your entries are unchanged.")
-                    }
-                  >
-                    Remove saved template
-                  </button>
-                </>
-              )}
-            </div>
-          </article>
-        ))}
+                  </>
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
-      {!loading && !error && !(tab === "saved" ? local : remote).length && (
+      {!loading && !error && !visible.length && (
         <p className="muted">
           {tab === "saved"
             ? "No custom templates yet. Create one with the prompts you like."

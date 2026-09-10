@@ -1,0 +1,305 @@
+.social-page {
+  width: 100%;
+  max-width: 1120px;
+  min-width: 0;
+  margin-inline: auto;
+  padding: 24px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.social-page h1 {
+  font-size: clamp(24px, 3vw, 34px);
+  margin: 6px 0 12px;
+}
+.social-page h2 {
+  font-size: 20px;
+  margin: 12px 0;
+}
+.social-page h3 {
+  font-size: 17px;
+}
+.social-page p {
+  line-height: 1.6;
+}
+.social-page small,
+.social-page time,
+.social-page .muted {
+  font-size: 12px;
+  color: var(--text-muted, var(--muted, #888));
+}
+.social-heading,
+.social-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.social-heading {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.social-row {
+  margin-block: 12px;
+}
+.social-row > input {
+  flex: 1;
+  min-width: 140px;
+}
+.social-page button,
+.social-form button {
+  border: 1px solid var(--border, #7775);
+  border-radius: 9px;
+  padding: 8px 12px;
+  background: var(--surface, var(--bg, #8881));
+  color: inherit;
+  cursor: pointer;
+}
+.social-page button:disabled,
+.social-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.social-page button[aria-pressed="true"] {
+  background: var(--accent-soft, #85bb9522);
+  border-color: var(--accent, #6c9f8e);
+}
+.social-page button:focus-visible,
+.social-form :focus-visible {
+  outline: 2px solid var(--accent, #8bbfa8);
+  outline-offset: 3px;
+}
+.social-page .primary,
+.social-form .primary {
+  background: var(--accent, #588e79);
+  color: var(--on-accent, #fff);
+}
+.social-page input,
+.social-page select,
+.social-page textarea,
+.social-form input,
+.social-form select,
+.social-form textarea {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #7775);
+  border-radius: 8px;
+  background: var(--input, var(--bg, #8881));
+  color: inherit;
+  font: inherit;
+}
+.social-page textarea,
+.social-form textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+.social-form,
+.social-editor {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.social-form label,
+.social-editor label {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.social-form fieldset {
+  border: 1px solid var(--border, #7775);
+  border-radius: 10px;
+  padding: 12px;
+}
+.social-form .social-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.social-check input {
+  width: 18px;
+  height: 18px;
+}
+.social-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.social-card {
+  display: block;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border, #7774);
+  border-radius: 14px;
+  background: var(--panel, #88808);
+  text-align: left;
+  margin-bottom: 12px;
+}
+.social-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.social-stats .social-card {
+  display: grid;
+  gap: 8px;
+  text-transform: capitalize;
+}
+.social-stats strong {
+  font-size: 28px;
+}
+.social-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--accent-soft, #85bb9533);
+  font-size: 23px;
+}
+.social-body,
+.social-bubble p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.social-tag {
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--accent-soft, #85bb9522);
+}
+.social-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0;
+  text-transform: capitalize;
+}
+.social-tabs button {
+  text-transform: capitalize;
+}
+.social-error {
+  border: 1px solid #c48c5c66;
+  background: #c48c5c12;
+  border-radius: 9px;
+  padding: 12px;
+  margin: 12px 0;
+  line-height: 1.5;
+}
+.social-split {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 20px;
+}
+.social-conversations button {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+}
+.social-tree {
+  border-right: 1px solid var(--border, #7774);
+  max-height: 70vh;
+  overflow: auto;
+}
+.social-tree button {
+  width: 100%;
+  text-align: left;
+  border-color: transparent;
+  margin-bottom: 3px;
+  overflow-wrap: anywhere;
+}
+.social-editor .social-note-body {
+  min-height: 360px;
+  font-family: ui-monospace, monospace;
+  line-height: 1.6;
+}
+.social-chat {
+  min-width: 0;
+}
+.social-message-list {
+  height: 45vh;
+  min-height: 200px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+}
+.social-bubble {
+  max-width: 88%;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--panel, #8881);
+  border: 1px solid var(--border, #7774);
+  margin: 10px 0;
+}
+.social-bubble.mine {
+  margin-left: auto;
+  background: var(--accent-soft, #85bb9522);
+}
+.social-bubble p {
+  margin: 5px 0;
+}
+.social-badge {
+  position: absolute;
+  right: 0;
+  top: 0;
+  border-radius: 20px;
+  padding: 1px 4px;
+  background: var(--accent, #588e79);
+  color: #fff;
+  font-size: 10px;
+}
+.social-page pre,
+.social-form pre,
+.dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 400px;
+  overflow: auto;
+}
+.social-preview {
+  max-height: 250px;
+  overflow: auto;
+}
+.social-demo {
+  padding: 16px;
+  border: 1px solid var(--border, #7774);
+  border-radius: 12px;
+  margin: 16px 24px;
+}
+.social-public {
+  min-height: 100vh;
+  overflow: auto;
+}
+.social-page a {
+  color: var(--accent, #81b39e);
+}
+@media (max-width: 700px) {
+  .social-page {
+    padding: 16px;
+  }
+  .social-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .social-tree,
+  .social-conversations {
+    max-height: 200px;
+    overflow: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border, #7774);
+  }
+  .social-message-list {
+    height: 45vh;
+  }
+  .social-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .social-form .social-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

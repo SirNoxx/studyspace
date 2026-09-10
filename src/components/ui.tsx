@@ -132,6 +132,7 @@ export function Menu({
         action: () => void;
         danger?: boolean;
         disabled?: boolean;
+        info?: boolean;
       }
     | "separator"
   )[];
@@ -157,6 +158,11 @@ export function Menu({
           {items.map((item, i) =>
             item === "separator" ? (
               <Dropdown.Separator className="menu-separator" key={i} />
+            ) : item.info ? (
+              <div className="menu-info" key={i}>
+                {item.icon && <item.icon size={14} />}
+                <span>{item.label}</span>
+              </div>
             ) : (
               <Dropdown.Item
                 className={"menu-item " + (item.danger ? "danger" : "")}

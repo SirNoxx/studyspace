@@ -29,7 +29,7 @@ export interface Container {
   updatedAt: string;
   archived?: boolean;
   trashed?: boolean;
-  system?: "general";
+  system?: "general" | "quick" | "pinned";
 }
 export interface Revision {
   revision: number;
@@ -40,6 +40,7 @@ export interface Revision {
 }
 export interface Note {
   id: ID;
+  order?: number;
   containerId: ID;
   title: string;
   body: string;
@@ -233,7 +234,15 @@ export interface Notification {
 export interface AIRecord {
   chatId?: ID;
   question?: string;
-  scope?: "selection" | "note" | "subject";
+  scope?: "selection" | "note" | "subject" | "folder";
+  containerId?: ID;
+  contextTitle?: string;
+  difficulty?: "easy" | "medium" | "hard";
+  cards?: { question: string; answer: string }[];
+  savedCardIds?: ID[];
+  status?: "pending" | "complete" | "stopped" | "error";
+  errorMessage?: string;
+  coverage?: { notes: number; sections: number };
   responseStyle?: string;
   id: ID;
   noteId: ID;
@@ -275,6 +284,7 @@ export interface Settings {
   reviewCap: number;
   notifications: boolean;
   aiConsent: boolean;
+  aiPersonality?: string;
   defaultMode: "source" | "live" | "reading";
   shortcuts: Record<string, string>;
   journalTemplate: string;

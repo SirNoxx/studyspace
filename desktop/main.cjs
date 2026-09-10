@@ -1,3 +1,4 @@
+const startupBegan = performance.now();
 const {
   app,
   BrowserWindow,
@@ -11,7 +12,6 @@ const {
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const net = require("node:net");
-const { autoUpdater } = require("electron-updater");
 const {
   cloudOrigin,
   externalUrl,
@@ -30,15 +30,24 @@ app.setAppUserModelId("com.sirnoxx.studyspace");
 const port = smoke ? 47832 : 47831,
   localOrigin = `http://127.0.0.1:${port}`;
 const settingsPath = path.join(__dirname, "ui", "settings.html");
+const startupPath = path.join(__dirname, "ui", "startup.html");
 const guide =
   "https://github.com/SirNoxx/studyspace/blob/main/docs/windows-supabase-setup.md";
 let mainWindow,
   settingsWindow,
   server,
+  serverStarting,
   updater,
+  workspaceLoaded = false,
+  opening = false,
   closing = false,
   closePending = false,
   quitting = false;
+const startupTimings = {};
+function markStartup(stage) {
+  startupTimings[stage] = Math.round(performance.now() - startupBegan);
+  if (smoke) global.__studyspaceStartupTimings = { ...startupTimings };
+}
 let settings = {
   cloudOrigin: "",
   automaticUpdates: true,
@@ -77,10 +86,12 @@ async function launchLocalServer() {
     );
     probe.listen(port, "127.0.0.1", () => probe.close(resolve));
   });
+  if (closing || quitting) return;
   const web = app.isPackaged
     ? path.join(process.resourcesPath, "web")
     : path.join(__dirname, ".stage", "web");
   await fs.access(path.join(web, "server.js"));
+  if (closing || quitting) return;
   server = utilityProcess.fork(path.join(web, "server.js"), [], {
     cwd: web,
     env: serverEnvironment(port),
@@ -90,7 +101,8 @@ async function launchLocalServer() {
   let exited = false;
   server.on("exit", () => {
     exited = true;
-    if (!quitting && mainWindow && !mainWindow.isDestroyed())
+    serverStarting = undefined;
+    if (!quitting && workspaceLoaded && mainWindow && !mainWindow.isDestroyed())
       dialog.showErrorBox(
         "Studyspace local workspace stopped",
         "Your saved notes remain on this computer. Close and reopen Studyspace to restart the local workspace.",
@@ -102,6 +114,7 @@ async function launchLocalServer() {
     if (smoke) process.stderr.write(chunk);
   });
   for (let attempt = 0; attempt < 150; attempt++) {
+    if (closing || quitting) return;
     if (exited) throw new Error("The bundled local workspace could not start.");
     try {
       const response = await fetch(`${localOrigin}/api/health`, {
@@ -120,8 +133,17 @@ async function launchLocalServer() {
   }
   throw new Error("The local workspace took too long to start.");
 }
+function ensureLocalServer() {
+  if (!serverStarting) {
+    serverStarting = launchLocalServer().catch((error) => {
+      serverStarting = undefined;
+      throw error;
+    });
+  }
+  return serverStarting;
+}
 async function flushWorkspace() {
-  if (!mainWindow || mainWindow.isDestroyed()) return true;
+  if (!workspaceLoaded || !mainWindow || mainWindow.isDestroyed()) return true;
   try {
     return await mainWindow.webContents.executeJavaScript(
       "window.__studyspaceFlushForClose ? window.__studyspaceFlushForClose() : true",
@@ -167,6 +189,7 @@ function guard(window, origin) {
   window.webContents.session.setPermissionCheckHandler(() => false);
 }
 async function openWorkspace(kind) {
+  if (opening || closing || quitting) return;
   if (!["local", "cloud"].includes(kind))
     throw new Error("Choose a local or connected workspace.");
   if (kind === "cloud" && !settings.cloudOrigin) {
@@ -177,12 +200,20 @@ async function openWorkspace(kind) {
     throw new Error(
       "Finish saving or export your current work before switching workspaces.",
     );
-  settings.lastWorkspace = kind;
-  await saveSettings();
-  await mainWindow.loadURL(
-    kind === "cloud" ? `${settings.cloudOrigin}/w` : `${localOrigin}/demo`,
-  );
-  mainWindow.show();
+  opening = true;
+  try {
+    if (kind === "local") await ensureLocalServer();
+    if (closing || quitting) return;
+    settings.lastWorkspace = kind;
+    await saveSettings();
+    await mainWindow.loadURL(
+      kind === "cloud" ? `${settings.cloudOrigin}/w` : `${localOrigin}/demo`,
+    );
+    workspaceLoaded = true;
+    mainWindow.show();
+  } finally {
+    opening = false;
+  }
 }
 function showSettings() {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
@@ -344,22 +375,16 @@ else {
   app
     .whenReady()
     .then(async () => {
-      try {
-        const saved = JSON.parse(await fs.readFile(settingsFile(), "utf8"));
-        settings = {
-          cloudOrigin: cloudOrigin(saved.cloudOrigin ?? ""),
-          automaticUpdates: saved.automaticUpdates !== false,
-          lastWorkspace: saved.lastWorkspace === "cloud" ? "cloud" : "local",
-        };
-      } catch {}
-      await launchLocalServer();
+      markStartup("appReadyMs");
+      opening = true;
       mainWindow = new BrowserWindow({
         width: 1440,
         height: 940,
         minWidth: 850,
         minHeight: 600,
         title: "Studyspace",
-        show: false,
+        // Show the native shell immediately; never wait for the web server here.
+        show: !smoke,
         backgroundColor: "#f5f7f2",
         icon: path.join(__dirname, "build", "icon.png"),
         webPreferences: {
@@ -370,6 +395,9 @@ else {
           spellcheck: true,
         },
       });
+      markStartup("windowCreatedMs");
+      mainWindow.setMenu(null);
+      mainWindow.setProgressBar(2);
       guard(mainWindow, () =>
         settings.lastWorkspace === "cloud" ? settings.cloudOrigin : localOrigin,
       );
@@ -393,6 +421,28 @@ else {
       mainWindow.webContents.on("will-prevent-unload", (event) => {
         if (closing) event.preventDefault();
       });
+      // This tiny local page needs neither Next.js nor a network connection.
+      // Start reading settings in parallel, after the window already exists.
+      await Promise.all([
+        mainWindow
+          .loadFile(startupPath)
+          .then(() => markStartup("loadingPageMs")),
+        fs
+          .readFile(settingsFile(), "utf8")
+          .then((raw) => {
+            const saved = JSON.parse(raw);
+            settings = {
+              cloudOrigin: cloudOrigin(saved.cloudOrigin ?? ""),
+              automaticUpdates: saved.automaticUpdates !== false,
+              lastWorkspace:
+                saved.lastWorkspace === "cloud" ? "cloud" : "local",
+            };
+          })
+          .catch(() => {}),
+      ]);
+      if (closing || quitting) return;
+      // Updater modules are not required to paint the first window.
+      const { autoUpdater } = require("electron-updater");
       updater = new Updates(autoUpdater, {
         enabled: settings.automaticUpdates,
         packaged: app.isPackaged,
@@ -418,21 +468,61 @@ else {
       });
       registerIPC();
       installMenu();
+      // Only the isolated smoke harness can simulate a slow startup.
+      if (smoke) {
+        const delay = Number(
+          process.env.STUDYSPACE_SMOKE_STARTUP_DELAY_MS ?? 0,
+        );
+        if (Number.isFinite(delay) && delay > 0)
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(delay, 10000)),
+          );
+      }
+      if (closing || quitting) return;
+      const cloud = settings.lastWorkspace === "cloud" && settings.cloudOrigin;
+      if (!cloud) {
+        await ensureLocalServer();
+        markStartup("localServerReadyMs");
+      }
+      if (closing || quitting) return;
       await mainWindow.loadURL(
-        settings.lastWorkspace === "cloud" && settings.cloudOrigin
-          ? `${settings.cloudOrigin}/w`
-          : `${localOrigin}/demo`,
+        cloud ? `${settings.cloudOrigin}/w` : `${localOrigin}/demo`,
       );
+      if (closing || quitting) return;
+      workspaceLoaded = true;
+      opening = false;
+      markStartup("workspaceLoadedMs");
+      mainWindow.setProgressBar(-1);
       if (!smoke) {
-        mainWindow.show();
         updater.start();
       } else showSettings();
     })
-    .catch((error) => {
-      if (smoke) console.error(error);
-      else dialog.showErrorBox("Unable to open Studyspace", error.message);
-      quitting = true;
+    .catch(async (error) => {
+      if (closing || quitting) return;
+      opening = false;
       server?.kill();
+      serverStarting = undefined;
+      markStartup("failedMs");
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setProgressBar(-1);
+        try {
+          await mainWindow.loadFile(startupPath, {
+            query: { error: "1", workspace: settings.lastWorkspace },
+          });
+          // Keep a useful, closable window instead of an invisible process/modal.
+          return;
+        } catch {}
+      }
+      if (smoke)
+        console.error(
+          "Studyspace startup failed before its window could load.",
+        );
+      else
+        dialog.showErrorBox(
+          "Unable to open Studyspace",
+          "Close and reopen Studyspace to try again.",
+        );
+      quitting = true;
       app.exit(1);
     });
   app.on("before-quit", (event) => {

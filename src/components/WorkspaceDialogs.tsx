@@ -1,4 +1,8 @@
 "use client";
+import { quickNotesContainer } from "@/lib/quick-notes";
+import QuickNoteMove from "./QuickNoteMove";
+import PublishPicker from "./PublishPicker";
+import { publicationCandidates } from "@/lib/publish-picker";
 import { locateQuote } from "@/lib/anchors";
 import { focusPassage } from "@/lib/focus-passage";
 import { useEffect, useMemo, useState } from "react";
@@ -79,13 +83,14 @@ export default function Dialogs({
   const { w, mutate, active } = ctx;
   const existingDefinition = w.definitions.find((d) => d.id === dialog.id),
     existingSource = w.sources.find((s) => s.id === dialog.id);
+  const publishNote = w.notes.find((n) => n.id === dialog.id);
+  const publicationContainerId = dialog.container
+    ? dialog.id
+    : publishNote?.containerId;
   const previousPublication =
     dialog.type === "publish"
-      ? w.publications.find(
-          (p) =>
-            p.containerId ===
-            (dialog.container ? dialog.id : active?.containerId),
-        )?.current
+      ? w.publications.find((p) => p.containerId === publicationContainerId)
+          ?.current
       : undefined;
   const [name, setName] = useState(
       String(dialog.value ?? existingDefinition?.term ?? ""),
@@ -129,15 +134,8 @@ export default function Dialogs({
     } | null>(null),
     [step, setStep] = useState(0),
     [selectedNotes, setSelectedNotes] = useState<string[]>(() =>
-      w.notes
-        .filter(
-          (n) =>
-            !n.trashed &&
-            !["journal", "dream"].includes(n.kind) &&
-            (dialog.container
-              ? inContainer(w, n.containerId, dialog.id!)
-              : n.id === dialog.id),
-        )
+      publicationCandidates(w, dialog.id, Boolean(dialog.container))
+        .filter((n) => !["journal", "dream"].includes(n.kind))
         .map((n) => n.id),
     ),
     [allowCopies, setAllowCopies] = useState(false),
@@ -178,7 +176,13 @@ export default function Dialogs({
         db.put("drafts", { body, name }, ctx.account + ":quick"),
       );
   }, [body, name]);
-  const destinations = w.containers.filter((c) => !c.trashed && !c.archived);
+  const destinations = w.containers.filter(
+    (c) =>
+      c.system !== "quick" &&
+      c.system !== "pinned" &&
+      !c.trashed &&
+      !c.archived,
+  );
   const options = (
     <>
       <option value="">All Collections · new root</option>
@@ -440,34 +444,13 @@ export default function Dialogs({
   }
   if (dialog.type === "publish-picker")
     return (
-      <Modal
-        title="Publish to Discover"
-        description="Choose a collection or folder, then review its exact public scope. Your originals stay private."
+      <PublishPicker
+        w={w}
         onClose={onClose}
-      >
-        <div className="link-picker">
-          {w.containers
-            .filter((c) => !c.trashed && !c.archived)
-            .map((c) => (
-              <button
-                key={c.id}
-                onClick={() =>
-                  ctx.setDialog({ type: "publish", id: c.id, container: true })
-                }
-              >
-                <SymbolIcon name={c.icon} />
-                <span>
-                  {c.title}
-                  <small>
-                    {ancestry(w, c.id)
-                      .map((c) => c.title)
-                      .join(" / ")}
-                  </small>
-                </span>
-              </button>
-            ))}
-        </div>
-      </Modal>
+        onSelect={(id, container) =>
+          ctx.setDialog({ type: "publish", id, container })
+        }
+      />
     );
   if (dialog.type === "container")
     return (
@@ -622,11 +605,16 @@ export default function Dialogs({
         </form>
       </Modal>
     );
+  if (
+    dialog.type === "move" &&
+    w.notes.find((n) => n.id === dialog.id)?.kind === "quick"
+  )
+    return <QuickNoteMove ctx={ctx} noteId={dialog.id!} onClose={onClose} />;
   if (dialog.type === "quick")
     return (
       <Modal
         title="Catch a thought"
-        description="A quick note, safely captured in General."
+        description="Saved in Quick notes, separate from your collections. Organize it later if you want to keep it."
         onClose={onClose}
       >
         <form
@@ -638,7 +626,7 @@ export default function Dialogs({
             }
             let id = "";
             mutate((s) => {
-              id = createNote(s, parent || general(s).id, {
+              id = createNote(s, quickNotesContainer(s).id, {
                 id: String(dialog.captureId ?? uid()),
                 title:
                   name.trim() ||
@@ -672,17 +660,6 @@ export default function Dialogs({
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
-          <Field label="Save to">
-            <select value={parent} onChange={(e) => setParent(e.target.value)}>
-              {destinations.map((c) => (
-                <option value={c.id} key={c.id}>
-                  {ancestry(w, c.id)
-                    .map((x) => x.title)
-                    .join(" / ")}
-                </option>
-              ))}
-            </select>
-          </Field>
           {errors}
           {formFooter("Save & open")}
         </form>
@@ -1873,16 +1850,13 @@ export default function Dialogs({
       </Modal>
     );
   if (dialog.type === "publish") {
-    const candidates = w.notes.filter(
-      (n) =>
-        !n.trashed &&
-        (dialog.container
-          ? inContainer(w, n.containerId, dialog.id!)
-          : n.id === dialog.id),
+    const candidates = publicationCandidates(
+      w,
+      dialog.id,
+      Boolean(dialog.container),
     );
     const existing = w.publications.find(
-      (p) =>
-        p.containerId === (dialog.container ? dialog.id : active?.containerId),
+      (p) => p.containerId === publicationContainerId,
     );
     return (
       <Modal
@@ -1936,7 +1910,7 @@ export default function Dialogs({
                 onChange={(e) => setName(e.target.value)}
                 placeholder={
                   w.containers.find((c) => c.id === dialog.id)?.title ??
-                  active?.title ??
+                  publishNote?.title ??
                   "Research collection"
                 }
               />
@@ -2124,7 +2098,7 @@ export default function Dialogs({
                         title:
                           name ||
                           w.containers.find((c) => c.id === dialog.id)?.title ||
-                          active?.title ||
+                          publishNote?.title ||
                           "Research collection",
                         description,
                         category,
@@ -2240,11 +2214,7 @@ export default function Dialogs({
                         } else
                           s.publications.push({
                             id: snapshot.publicationId,
-                            containerId: String(
-                              dialog.container
-                                ? dialog.id
-                                : active?.containerId,
-                            ),
+                            containerId: String(publicationContainerId),
                             current: snapshot,
                             versions: [snapshot],
                             status: "published",
@@ -2259,9 +2229,7 @@ export default function Dialogs({
                           ids: selectedNotes,
                           expectedRevision: w.revision,
                           fingerprint: previewFingerprint,
-                          containerId: dialog.container
-                            ? dialog.id
-                            : active?.containerId,
+                          containerId: publicationContainerId,
                           fields: snapshot,
                           selection: publicationExtras,
                         }),
@@ -2545,6 +2513,14 @@ export default function Dialogs({
             Private notes, sources, study history, and active publications will
             be removed. Previously made independent copies and expired-backup
             schedules are outside this action.
+          </p>
+          <p>
+            Your community profile, posts, comments, and conversations are also
+            deleted, including conversation history for the other participant.
+            Shared collections you own are deleted for everyone; transfer
+            ownership first to preserve them. Your contributions to collections
+            owned by others remain, with your authorship removed. Moderation
+            evidence is retained for up to 90 days.
           </p>
           <Field label="Your current password">
             <input

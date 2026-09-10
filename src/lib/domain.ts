@@ -123,6 +123,8 @@ export function createNote(
     tags: [],
     ...fields,
   };
+  if (w.containers.find((c) => c.id === n.containerId)?.system === "quick")
+    n.kind = "quick";
   const existing = w.notes.find((x) => x.id === n.id);
   if (existing) return existing;
   w.notes.push(n);
@@ -214,7 +216,9 @@ export function moveItems(w: Workspace, ids: string[], destination: string) {
     }
     const n = w.notes.find((n) => n.id === id);
     if (n) {
+      if(target.system!=="pinned"&&n.metadata)delete n.metadata.pinnedFrom;
       n.containerId = destination;
+      if (n.kind === "quick" && target.system !== "quick") n.kind = "note";
       n.updatedAt = now();
       reconcileSources(w, n);
     }

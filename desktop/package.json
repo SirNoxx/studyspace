@@ -1,7 +1,7 @@
 {
   "name": "studyspace-desktop",
-  "version": "1.0.1",
-  "description": "Studyspace \u00e2\u20ac\u201d a calm space for writing, research, and understanding.",
+  "version": "2.0.0",
+  "description": "Studyspace â€” a calm space for writing, research, and understanding.",
   "author": "SirNoxx",
   "private": true,
   "main": "main.cjs",
@@ -22,7 +22,7 @@
   "build": {
     "appId": "com.sirnoxx.studyspace",
     "productName": "Studyspace",
-    "copyright": "Copyright \u00c2\u00a9 2026 SirNoxx",
+    "copyright": "Copyright Â© 2026 SirNoxx",
     "directories": {
       "output": "release",
       "buildResources": "build"

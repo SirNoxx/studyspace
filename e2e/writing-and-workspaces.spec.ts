@@ -32,7 +32,9 @@ test("rename folders and files inline, cancel safely, and move from title to emp
   await folder.press("Enter");
   const row = page
     .locator(".container-row")
-    .filter({ has: page.getByTitle("Focus Original folder", { exact: true }) });
+    .filter({
+      has: page.locator(".tree-title").filter({ hasText: /^Original folder$/ }),
+    });
   await row.focus();
   await row.press("F2");
   await expect(folder).toBeFocused();
@@ -261,9 +263,12 @@ test("AI chat is docked with persistent conversations, adjustable options, and c
   await page.reload();
   await page.getByRole("button", { name: "Open AI Chat", exact: true }).click();
   await expect(page.getByRole("log")).toContainText("Fixture response 3");
+  await page.getByRole("button", { name: "Chat history", exact: true }).click();
   await page
-    .getByLabel("Chat history", { exact: true })
-    .selectOption({ label: "Give an example" });
+    .getByRole("dialog", { name: "Chat history" })
+    .getByRole("button")
+    .filter({ hasText: "Explain this" })
+    .click();
   await expect(page.getByRole("log")).toContainText("Fixture response 1");
   await page.screenshot({
     path: "docs/screenshots/sidebar-chat-refinements.png",

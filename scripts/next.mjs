@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url),
   command = args[0];
 const root = process.cwd(),
   standalone = resolve(root, ".next/standalone");
+if (command === "dev" || command === "build") await import("./prepare-code-runtimes.mjs");
 async function copyAssets() {
   await cp(resolve(root, "public"), resolve(standalone, "public"), {
     recursive: true,

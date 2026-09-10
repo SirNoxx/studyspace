@@ -5,6 +5,7 @@ const db = adminClient(),
   workerId = process.env.WORKER_ID ?? "worker-" + process.pid;
 let stopping = false;
 let lastSweep = Date.now();
+let lastCommunitySweep = 0;
 process.on("SIGINT", () => {
   stopping = true;
 });
@@ -13,6 +14,27 @@ process.on("SIGTERM", () => {
 });
 console.log(JSON.stringify({ event: "worker_started", workerId }));
 while (!stopping) {
+  if (
+    Date.now() - lastCommunitySweep > 86400000 &&
+    process.env.SOCIAL_ENABLED !== "false"
+  ) {
+    const { data, error } = await db.rpc("community_maintenance");
+    if (error) {
+      console.error(
+        JSON.stringify({
+          event: "community_maintenance_failed",
+          code: error.code,
+        }),
+      );
+      // Back off after failure, then retry within an hour.
+      lastCommunitySweep = Date.now() - 82800000;
+    } else {
+      lastCommunitySweep = Date.now();
+      console.log(
+        JSON.stringify({ event: "community_maintenance_completed", ...data }),
+      );
+    }
+  }
   const { data, error } = await db.rpc("claim_job", { p_worker: workerId });
   if (error) {
     console.error(

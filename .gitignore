@@ -6,6 +6,7 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 .data/
+public/code-runtime/
 
 .backups/
 .supabase/

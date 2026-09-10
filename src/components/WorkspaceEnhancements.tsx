@@ -443,7 +443,7 @@ export function ChatLauncher({ ctx }: { ctx: AppContext }) {
       <div className="chat-launcher">
         <button
           className="secondary"
-          onClick={ctx.openChat}
+          onClick={() => ctx.openChat()}
           aria-label="Open AI Chat"
         >
           <MessageCircle size={18} />
@@ -477,64 +477,4 @@ export const toolDescriptions: Record<string, string> = {
     "Annotations holds private reflections and draft author comments. Public questions belong to published versions.",
   ai: "AI Study Guide helps explain, summarize, and practice selected material, after your explicit consent.",
 };
-export function Onboarding({
-  ctx,
-  step,
-  onStep,
-  onClose,
-}: {
-  ctx: AppContext;
-  step: number;
-  onStep: (step: number) => void;
-  onClose: () => void;
-}) {
-  const finish = () => {
-    ctx.mutate((w) => {
-      w.settings.onboardingComplete = true;
-    });
-    onClose();
-  };
-  return (
-    <section
-      className="onboarding-card"
-      aria-label="Studyspace walkthrough"
-      role="region"
-    >
-      <span className="eyebrow">WELCOME TO STUDYSPACE · {step + 1} / 3</span>
-      <h3>
-        {
-          [
-            "Make yourself at home",
-            "A place for each part of your work",
-            "Choose a tool that interests you",
-          ][step]
-        }
-      </h3>
-      <p>
-        {
-          [
-            "The far-left navigation starts with labels. Use its chevron to make it compact, and click again to expand it. Collections reopens the file explorer whenever you need it.",
-            "Collections is your writing space. Search finds notes, Bookmarks keeps favorites, Journal captures your days, Review practices study cards, and Discover explores published research.",
-            "Try any tab in Notes & Sources. Its description appears beneath the buttons. You can show compact icons with the label toggle and reopen the panel from the top bar.",
-          ][step]
-        }
-      </p>
-      <div>
-        <button className="text-button" onClick={finish}>
-          Skip walkthrough
-        </button>
-        {step > 0 && (
-          <button className="secondary" onClick={() => onStep(step - 1)}>
-            Back
-          </button>
-        )}
-        <button
-          className="primary"
-          onClick={() => (step === 2 ? finish() : onStep(step + 1))}
-        >
-          {step === 2 ? "Finish" : "Next"}
-        </button>
-      </div>
-    </section>
-  );
-}
+export { default as Onboarding } from "./Onboarding";

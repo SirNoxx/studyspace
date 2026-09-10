@@ -44,15 +44,20 @@ test("labeled navigation, scoped inline folder creation, and preference persiste
   await input.fill("TEST inline folder");
   await input.press("Enter");
   await expect(
-    page.getByTitle("Focus TEST inline folder", { exact: true }),
+    page.getByRole("button", {
+      name: /^(Expand|Collapse) TEST inline folder contents$/,
+    }),
   ).toBeVisible();
+  await expect(
+    page.getByTitle("Focus TEST inline folder", { exact: true }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "New folder in Coding", exact: true })
     .click();
   await input.fill("CANCELLED NAME");
   await input.press("Escape");
   await expect(
-    page.getByTitle("Focus Untitled", { exact: true }),
+    page.getByRole("button", { name: /^(Expand|Collapse) Untitled contents$/ }),
   ).toBeVisible();
   await expect
     .poll(async () => {
@@ -66,6 +71,17 @@ test("labeled navigation, scoped inline folder creation, and preference persiste
     w.containers.find((c: any) => c.title === "TEST inline folder").parentId,
   ).toBe(root.id);
   expect(w.notes.some((n: any) => n.title === "Tool calling")).toBe(true);
+  const folder = w.containers.find(
+    (c: any) => c.title === "TEST inline folder",
+  );
+  await page.goto(`/demo/collection/${folder.id}`);
+  await expect(page.getByRole("tree", { name: "Coding files" })).toBeVisible();
+  await expect(page.locator(".focused-collection strong")).toHaveText("Coding");
+  await page
+    .getByRole("button", { name: "All Collections", exact: true })
+    .click();
+  await page.getByTitle("Focus Coding", { exact: true }).click();
+  await expect(page.getByRole("tree", { name: "Coding files" })).toBeVisible();
   await page.reload();
   await expect(
     page.getByRole("button", { name: "Expand navigation labels" }),
@@ -271,6 +287,8 @@ test("all eight themes remain readable and the walkthrough and chat preferences 
   ).toBeVisible();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("tab", { name: "Sources", exact: true }).click();
   await expect(page.locator(".tool-description")).toContainText(
     "Sources connects",
@@ -417,6 +435,8 @@ test("onboarding keeps the invited tools reachable on narrow and short screens",
   await page
     .getByRole("button", { name: "Revisit welcome walkthrough" })
     .click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await page.getByRole("button", { name: "Next", exact: true }).click();
   for (const viewport of [

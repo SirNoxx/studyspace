@@ -1,0 +1,6 @@
+{
+  "date": "2026-09-10T17:11:46.616Z",
+  "scenario": "200 shared notes, 4 concurrent readers, 12 requests",
+  "p95Milliseconds": 241,
+  "targetMilliseconds": 5000
+}

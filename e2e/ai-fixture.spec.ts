@@ -35,8 +35,9 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
     });
   });
   await page.getByRole("button", { name: "Chat options", exact: true }).click();
+  await page.getByRole("button", { name: "Study Tools", exact: true }).click();
   await page
-    .getByRole("button", { name: "Explain in more detail", exact: false })
+    .getByRole("menuitem", { name: "Explain in more detail", exact: false })
     .click();
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await page.getByRole("button", { name: "Review & save response" }).click();
@@ -47,7 +48,9 @@ test("AI fixture: explicit rewrite acceptance, hidden quiz answers, and resumabl
   });
   await page.getByRole("button", { name: "Reject", exact: true }).click();
   await page.getByRole("button", { name: "Chat options", exact: true }).click();
-  await page.getByLabel("Chat action").selectOption("quiz");
+  await page.getByRole("button", { name: "Chat options", exact: true }).click();
+  await page.getByRole("button", { name: "Study Tools", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Test me", exact: true }).click();
   await page.getByLabel("Chat message", { exact: true }).fill("Test me");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await expect(page.locator(".quiz-session")).toBeVisible();

@@ -1,11 +1,18 @@
 import {
   AlignLeft,
+  Layers,
   TextSearch,
   HelpCircle,
   Route,
   MessageCircle,
 } from "lucide-react";
 export const actions = [
+  {
+    id: "cards",
+    label: "Make study cards",
+    description: "Build a study set from your notes",
+    icon: Layers,
+  },
   {
     id: "summarize",
     label: "Summarize",

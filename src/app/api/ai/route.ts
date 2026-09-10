@@ -1,16 +1,13 @@
 import { z } from "zod";
-import { quizFormat, parseQuiz } from "@/lib/quiz";
+import { streamStudyResponse } from "@/lib/server/ai-response";
+import { emptyWorkspace, now } from "@/lib/model";
 import { requireUser, adminClient, configured } from "@/lib/supabase/server";
 import {
   loadWorkspace,
   assertSameOrigin,
   apiError,
 } from "@/lib/server/repository";
-import {
-  buildAIContext,
-  AI_INSTRUCTIONS,
-  validateAIReferences,
-} from "@/lib/server/ai";
+import { buildAIContext, studyBatches } from "@/lib/server/ai";
 export const maxDuration = 120;
 export async function POST(request: Request) {
   try {
@@ -34,11 +31,50 @@ export async function POST(request: Request) {
       );
     const input = z
       .object({
-        action: z.enum(["summarize", "rewrite", "quiz", "next", "clarify"]),
+        action: z.enum([
+          "summarize",
+          "rewrite",
+          "quiz",
+          "next",
+          "clarify",
+          "cards",
+        ]),
         noteId: z.uuid(),
-        scope: z.enum(["selection", "note", "subject"]),
+        scope: z.enum(["selection", "note", "subject", "folder"]),
+        containerId: z.uuid().optional(),
+        difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+        consent: z.boolean().optional(),
+        localContext: z
+          .object({
+            notes: z
+              .array(
+                z.object({
+                  id: z.uuid(),
+                  containerId: z.uuid(),
+                  title: z.string().max(240),
+                  body: z.string().max(200000),
+                  kind: z.enum(["note", "quick", "journal", "dream"]),
+                  revision: z.number().int().positive(),
+                }),
+              )
+              .min(1)
+              .max(10000),
+            containers: z
+              .array(
+                z.object({
+                  id: z.uuid(),
+                  parentId: z.uuid().nullable(),
+                  title: z.string().max(240),
+                  kind: z.enum(["collection", "subject", "folder"]),
+                }),
+              )
+              .min(1)
+              .max(10000),
+          })
+          .optional(),
         selection: z.string().max(45000).optional(),
         question: z.string().max(4000).optional(),
+        personality: z.string().max(2000).optional(),
         responseStyle: z
           .enum(["balanced", "concise", "detailed", "socratic"])
           .optional(),
@@ -54,9 +90,46 @@ export async function POST(request: Request) {
         expectedRevision: z.number().int(),
         explicitSensitive: z.boolean().optional(),
       })
-      .parse(await request.json());
-    const w = await loadWorkspace(user.id);
-    if (!w.settings.aiConsent)
+      .parse(
+        await (async () => {
+          const raw = await request.text();
+          if (raw.length > 2000000) throw new Error("REQUEST_LIMIT");
+          return JSON.parse(raw);
+        })(),
+      );
+    const w = input.localContext
+      ? emptyWorkspace()
+      : await loadWorkspace(user.id);
+    if (input.localContext) {
+      w.containers = input.localContext.containers.map((c) => ({
+        ...c,
+        description: "",
+        color: "",
+        icon: "folder",
+        approach: "mixed",
+        dictionary: false,
+        related: [],
+        order: 0,
+        createdAt: now(),
+        updatedAt: now(),
+      }));
+      w.notes = input.localContext.notes.map((n) => ({
+        ...n,
+        tags: [],
+        history: [],
+        createdAt: now(),
+        updatedAt: now(),
+      }));
+      if (w.notes.reduce((sum, n) => sum + n.body.length, 0) > 200000)
+        return Response.json(
+          {
+            error:
+              "Choose a smaller folder (up to 200,000 characters). No content was sent to the AI provider.",
+          },
+          { status: 400 },
+        );
+    }
+    if (!(input.consent ?? (!input.localContext && w.settings.aiConsent)))
       return Response.json(
         {
           error:
@@ -64,137 +137,38 @@ export async function POST(request: Request) {
         },
         { status: 403 },
       );
-    const context = buildAIContext(w, input);
-    const { data: allowed, error } = await adminClient().rpc("consume_quota", {
-      p_owner: user.id,
-      p_bucket: "ai",
-      p_limit: Number(process.env.AI_DAILY_REQUEST_LIMIT ?? 30),
-    });
-    if (error || !allowed)
+    let context;
+    try {
+      context = buildAIContext(w, input);
+    } catch (error) {
       return Response.json(
-        {
-          error:
-            "Daily AI request allowance reached. Try again tomorrow; core notes remain available.",
-        },
-        { status: 429 },
+        { error: (error as Error).message },
+        { status: 400 },
       );
+    }
+    for (const _batch of studyBatches(context)) {
+      const { data: allowed, error } = await adminClient().rpc(
+        "consume_quota",
+        {
+          p_owner: user.id,
+          p_bucket: "ai",
+          p_limit: Number(process.env.AI_DAILY_REQUEST_LIMIT ?? 30),
+        },
+      );
+      if (error || !allowed)
+        return Response.json(
+          {
+            error:
+              "Daily AI request allowance reached. Try again tomorrow; core notes remain available.",
+          },
+          { status: 429 },
+        );
+    }
     const signal = AbortSignal.any([
       request.signal,
       AbortSignal.timeout(110000),
     ]);
-    const upstream = await fetch(
-      (process.env.AI_BASE_URL ?? "https://api.openai.com/v1").replace(
-        /\/$/,
-        "",
-      ) + "/responses",
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer " + process.env.AI_API_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.AI_MODEL,
-          store: false,
-          stream: true,
-          max_output_tokens: 3500,
-          instructions:
-            AI_INSTRUCTIONS +
-            (input.action === "quiz"
-              ? " For this quiz return the required JSON with 3–6 grounded questions and separate answers. Keep answers out of question text. Cite evidence in answers."
-              : ""),
-          ...(input.action === "quiz" ? { text: { format: quizFormat } } : {}),
-          input: JSON.stringify({
-            task: input.action,
-            question: input.question,
-            responseStyle: input.responseStyle ?? "balanced",
-            conversation: input.history ?? [],
-            studyApproach: context.approach,
-            passages: context.passages,
-            definitions: context.definitions,
-            evidence: context.anchors,
-          }),
-        }),
-        signal,
-      },
-    );
-    if (!upstream.ok)
-      return Response.json(
-        {
-          error:
-            upstream.status === 429
-              ? "The AI provider is rate limiting requests. Try again later."
-              : "The AI provider could not complete this request. No note was modified.",
-        },
-        { status: 502 },
-      );
-    const encoder = new TextEncoder(),
-      decoder = new TextDecoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        let buffer = "",
-          output = "",
-          completed = false;
-        try {
-          const reader = upstream.body!.getReader();
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const frames = buffer.split(/\r?\n\r?\n/);
-            buffer = frames.pop() ?? "";
-            for (const frame of frames) {
-              const data = frame
-                .split(/\r?\n/)
-                .filter((line) => line.startsWith("data:"))
-                .map((line) => line.slice(5).trim())
-                .join("\n");
-              if (!data || data === "[DONE]") continue;
-              const event = JSON.parse(data);
-              if (event.type === "response.output_text.delta") {
-                output += event.delta;
-                if (output.length > 100000) throw new Error("OUTPUT_LIMIT");
-                if (input.action !== "quiz")
-                  controller.enqueue(
-                    encoder.encode(
-                      JSON.stringify({
-                        type: "preview",
-                        text: validateAIReferences(output, context.allowedIds),
-                      }) + "\n",
-                    ),
-                  );
-              }
-              if (event.type === "response.completed") completed = true;
-              if (event.type === "response.failed" || event.type === "error")
-                throw new Error("PROVIDER_FAILED");
-            }
-          }
-          if (!completed) throw new Error("INCOMPLETE");
-          const safe = validateAIReferences(output, context.allowedIds);
-          if (input.action === "quiz") parseQuiz(safe);
-          controller.enqueue(
-            encoder.encode(
-              JSON.stringify({
-                type: "complete",
-                text: safe,
-                evidence: [
-                  ...context.passages,
-                  ...context.definitions.map((d) => ({ ...d, title: d.term })),
-                  ...context.anchors,
-                ],
-              }) + "\n",
-            ),
-          );
-          controller.close();
-        } catch {
-          controller.error(
-            new Error(
-              "The AI response was interrupted. No edits were applied.",
-            ),
-          );
-        }
-      },
-    });
+    const stream = streamStudyResponse(input, context, signal);
     return new Response(stream, {
       headers: {
         "Content-Type": "application/x-ndjson; charset=utf-8",
