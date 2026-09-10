@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build -- --webpack",
   "installCommand": "npm ci",
   "functions": {
     "src/app/api/ai/route.ts": { "maxDuration": 120 },
