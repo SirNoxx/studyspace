@@ -894,13 +894,17 @@ function Members({
                 ))}
             </div>
             <label>
-              Account ID (also works for private profiles)
+              Collaborator's account ID
               <input
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
-                placeholder="ID from their profile link"
+                placeholder="Paste the other person's account ID"
               />
             </label>
+            <p className="muted">
+              Ask them to open their profile and copy their account ID. They do
+              not need to create a social profile or make it public.
+            </p>
             <label>
               Permission
               <select value={role} onChange={(e) => setRole(e.target.value)}>

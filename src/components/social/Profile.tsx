@@ -124,6 +124,18 @@ export default function Profile({ id }: { id?: string }) {
           )}
           {d.mine && (
             <>
+              <label>
+                Your account ID
+                <input
+                  readOnly
+                  value={d.id}
+                  onFocus={(e) => e.target.select()}
+                />
+              </label>
+              <p className="muted">
+                Share this ID with a collection owner to receive an invitation.
+                You can collaborate without creating a social profile.
+              </p>
               <h2>
                 Account statistics <small>Only you can see these</small>
               </h2>

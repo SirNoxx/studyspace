@@ -53,6 +53,12 @@ const messages: Record<string, string> = {
     "This community feature is temporarily unavailable. Please try again later.",
   AUTH_REQUIRED: "Sign in to use your community account.",
   ACCESS_DENIED: "You no longer have permission to access this content.",
+  INVITE_SELF:
+    "You already own this collection. Enter the other person's account ID to invite them.",
+  INVITEE_UNAVAILABLE:
+    "No account was found for that ID. Ask the other person to copy their account ID from their Studyspace profile.",
+  INVALID_ACCOUNT_ID:
+    "Enter the other person's complete account ID, or select their public username.",
   PROFILE_PRIVATE: "This profile is private or unavailable.",
   PUBLIC_PROFILE_REQUIRED:
     "Make your profile public before posting to Discover.",
@@ -187,6 +193,17 @@ export async function POST(request: Request) {
       })
       .parse(JSON.parse(raw));
     action = input.action;
+    if (action === "invite") {
+      const target = z
+        .uuid()
+        .safeParse(
+          typeof input.data.target === "string"
+            ? input.data.target.trim()
+            : input.data.target,
+        );
+      if (!target.success) throw new Error("INVALID_ACCOUNT_ID");
+      input.data.target = target.data;
+    }
     const { data, error } = await client.rpc("community_command", {
       p_action: input.action,
       p_data: input.data,

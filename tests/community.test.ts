@@ -129,6 +129,76 @@ async function invite(
   await cmd(owner, "invite", { target: member, collection, role }, id);
   await cmd(member, "invitation", { id, accept: true });
 }
+it("invites accounts without social profiles while preserving owner and recipient permissions", async () => {
+  const owner = uuid(),
+    recipient = uuid(),
+    outsider = uuid();
+  for (const id of [owner, recipient, outsider]) {
+    await db.query("insert into auth.users values($1)", [id]);
+    await db.query(
+      "insert into profiles(id,display_name) values($1,'New account')",
+      [id],
+    );
+  }
+  expect((await query(recipient, "profile")).id).toBe(recipient);
+  const collection = await cmd(owner, "collection", {
+    title: "First collaboration",
+  });
+  const invitation = uuid();
+  const payload = {
+    collection: collection.id,
+    target: recipient,
+    role: "editor",
+  };
+  await cmd(owner, "invite", payload, invitation);
+  await cmd(owner, "invite", payload, invitation);
+  expect((await query(recipient, "shared")).invitations).toHaveLength(1);
+  expect((await query(outsider, "shared")).invitations).toHaveLength(0);
+  await expect(query(recipient, "collection", collection.id)).rejects.toThrow(
+    "ACCESS_DENIED",
+  );
+  await expect(
+    cmd(outsider, "invitation", { id: invitation, accept: true }),
+  ).rejects.toThrow("ACCESS_DENIED");
+  await cmd(recipient, "invitation", { id: invitation, accept: true });
+  expect((await query(recipient, "collection", collection.id)).role).toBe(
+    "editor",
+  );
+  await cmd(recipient, "node-create", {
+    collection: collection.id,
+    kind: "note",
+    title: "Editor note",
+  });
+  await expect(
+    cmd(recipient, "invite", { ...payload, target: outsider }),
+  ).rejects.toThrow("ACCESS_DENIED");
+  await expect(
+    cmd(owner, "invite", { ...payload, target: owner }),
+  ).rejects.toThrow("INVITE_SELF");
+  await expect(
+    cmd(owner, "invite", { ...payload, target: uuid() }),
+  ).rejects.toThrow("INVITEE_UNAVAILABLE");
+  await cmd(outsider, "block", { target: owner });
+  await expect(
+    cmd(owner, "invite", { ...payload, target: outsider }),
+  ).rejects.toThrow("BLOCKED");
+  await cmd(owner, "member", {
+    collection: collection.id,
+    target: recipient,
+    role: "remove",
+  });
+  await expect(query(recipient, "collection", collection.id)).rejects.toThrow(
+    "ACCESS_DENIED",
+  );
+  expect(
+    (
+      await db.query(
+        "select id from community_profiles where id in ($1,$2,$3)",
+        [owner, recipient, outsider],
+      )
+    ).rows,
+  ).toHaveLength(0);
+});
 it("keeps private profiles, preferences, statistics and workspace data private", async () => {
   const a = await actor(false),
     b = await actor();
