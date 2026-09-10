@@ -13,6 +13,35 @@ export default function Auth() {
     setShowPassword(false);
     setMessage("");
   };
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ) {
+    return (
+      <main className="auth-page">
+        <a className="brand" href="/demo">
+          <BookOpen size={24} /> studyspace
+        </a>
+        <div className="auth-panel">
+          <div className="eyebrow">YOUR CONNECTED WORKSPACE</div>
+          <h1>Sign in to Studyspace</h1>
+          <p>
+            Accounts and shared study materials live in your connected
+            workspace. Your local notes stay on this device.
+          </p>
+          <a
+            className="primary"
+            href="https://studyspace-noxx-studios.vercel.app/auth"
+          >
+            Open connected workspace <ArrowRight size={16} />
+          </a>
+          <div className="auth-actions">
+            <a href="/demo">Continue with local notes</a>
+          </div>
+        </div>
+      </main>
+    );
+  }
   return (
     <main className="auth-page">
       <a className="brand" href="/">

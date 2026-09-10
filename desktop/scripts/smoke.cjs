@@ -42,6 +42,10 @@ async function closeMain() {
 }
 (async () => {
   await fs.mkdir(profile, { recursive: true });
+  await fs.writeFile(
+    path.join(profile, "desktop-settings.json"),
+    JSON.stringify({ lastWorkspace: "local", automaticUpdates: false }),
+  );
   let { workspace, settings } = await launch();
   const errors = [];
   workspace.on("pageerror", (error) => errors.push(error.message));

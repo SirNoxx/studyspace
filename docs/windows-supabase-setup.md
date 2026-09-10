@@ -1,8 +1,8 @@
 # Studyspace · Windows & Supabase setup
 
-## Install Studyspace 2.0
+## Install Studyspace 2.0.1
 
-Download **Studyspace-Setup-2.0.0-x64.exe** from [Version 2.0](https://github.com/SirNoxx/studyspace/releases/tag/v2.0.0), run the installer, and open Studyspace from Start. This is a complete Windows 11 x64 application: Electron, the local server, and the workspace are bundled. You do not need Node.js or a separate browser/server installation. The first release is unsigned; Windows may show an unknown-publisher/SmartScreen prompt. Verify the release source and compare `Get-FileHash .\Studyspace-Setup-2.0.0-x64.exe -Algorithm SHA256` with the release's SHA256SUMS.txt.
+Download **Studyspace-Setup-2.0.1-x64.exe** from [Version 2.0.1](https://github.com/SirNoxx/studyspace/releases/tag/v2.0.1), run the installer, and open Studyspace from Start. This is a complete Windows 11 x64 application: Electron, the local server, and the workspace are bundled. You do not need Node.js or a separate browser/server installation. The first release is unsigned; Windows may show an unknown-publisher/SmartScreen prompt. Verify the release source and compare `Get-FileHash .\Studyspace-Setup-2.0.1-x64.exe -Algorithm SHA256` with the release's SHA256SUMS.txt.
 
 The local workspace works without a Supabase account. Its private notes and attachments live in the desktop app's IndexedDB under `%APPDATA%\Studyspace`. The embedded server listens only on `127.0.0.1:47831`. Keep this app data directory when upgrading or reinstalling. The installer preserves it, including on uninstall; removing it manually removes local data. Use **Settings → Data → full workspace backup** regularly.
 

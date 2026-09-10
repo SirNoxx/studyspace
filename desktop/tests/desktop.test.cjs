@@ -10,6 +10,38 @@ const {
   serverEnvironment,
 } = require("../policy.cjs");
 const { Updates } = require("../updates.cjs");
+const {
+  DEFAULT_CLOUD_ORIGIN,
+  defaultSettings,
+  restoreSettings,
+} = require("../settings.cjs");
+test("new installations connect while upgrades retain local work and custom servers", () => {
+  assert.equal(defaultSettings().lastWorkspace, "cloud");
+  assert.equal(defaultSettings().cloudOrigin, DEFAULT_CLOUD_ORIGIN);
+  assert.equal(defaultSettings(true).lastWorkspace, "local");
+  assert.deepEqual(
+    restoreSettings({
+      cloudOrigin: "",
+      automaticUpdates: false,
+      lastWorkspace: "local",
+    }),
+    {
+      cloudOrigin: DEFAULT_CLOUD_ORIGIN,
+      automaticUpdates: false,
+      lastWorkspace: "local",
+    },
+  );
+  assert.equal(
+    restoreSettings({
+      cloudOrigin: "https://custom.example.com",
+      lastWorkspace: "cloud",
+    }).cloudOrigin,
+    "https://custom.example.com",
+  );
+  assert.throws(() =>
+    restoreSettings({ cloudOrigin: "http://unsafe.example.com" }),
+  );
+});
 test("cloud settings accept only HTTPS app origins", () => {
   assert.equal(
     cloudOrigin(" https://study.example.com/ "),

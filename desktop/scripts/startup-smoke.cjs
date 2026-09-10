@@ -12,7 +12,11 @@ const evidence = {
   scenarios: {},
 };
 let app, blocker, mainPage;
-async function launch(name, delay = 0, settings) {
+async function launch(
+  name,
+  delay = 0,
+  settings = { lastWorkspace: "local", automaticUpdates: false },
+) {
   const profile = path.join(
     root,
     "desktop/.smoke",

@@ -19,6 +19,11 @@ const {
   serverEnvironment,
 } = require("./policy.cjs");
 const { Updates } = require("./updates.cjs");
+const {
+  DEFAULT_CLOUD_ORIGIN,
+  defaultSettings,
+  restoreSettings,
+} = require("./settings.cjs");
 app.setPath("userData", path.join(app.getPath("appData"), "Studyspace"));
 const smoke = process.argv.includes("--smoke-test");
 if (smoke) {
@@ -48,11 +53,7 @@ function markStartup(stage) {
   startupTimings[stage] = Math.round(performance.now() - startupBegan);
   if (smoke) global.__studyspaceStartupTimings = { ...startupTimings };
 }
-let settings = {
-  cloudOrigin: "",
-  automaticUpdates: true,
-  lastWorkspace: "local",
-};
+let settings = defaultSettings();
 const settingsFile = () =>
   path.join(app.getPath("userData"), "desktop-settings.json");
 const desktopState = () => ({
@@ -174,7 +175,24 @@ function guard(window, origin) {
   });
   window.webContents.on("will-navigate", (event, url) => {
     try {
-      if (new URL(url).origin === origin()) return;
+      const target = new URL(url);
+      if (
+        window === mainWindow &&
+        origin() === localOrigin &&
+        [DEFAULT_CLOUD_ORIGIN, settings.cloudOrigin].includes(target.origin) &&
+        ["/auth", "/w"].includes(target.pathname)
+      ) {
+        event.preventDefault();
+        if (!settings.cloudOrigin) settings.cloudOrigin = DEFAULT_CLOUD_ORIGIN;
+        void openWorkspace("cloud").catch((error) =>
+          dialog.showErrorBox(
+            "Could not open connected workspace",
+            error.message,
+          ),
+        );
+        return;
+      }
+      if (target.origin === origin()) return;
     } catch {}
     event.preventDefault();
     const safe = externalUrl(url);
@@ -430,15 +448,17 @@ else {
         fs
           .readFile(settingsFile(), "utf8")
           .then((raw) => {
-            const saved = JSON.parse(raw);
-            settings = {
-              cloudOrigin: cloudOrigin(saved.cloudOrigin ?? ""),
-              automaticUpdates: saved.automaticUpdates !== false,
-              lastWorkspace:
-                saved.lastWorkspace === "cloud" ? "cloud" : "local",
-            };
+            settings = restoreSettings(JSON.parse(raw));
           })
-          .catch(() => {}),
+          .catch(async () => {
+            const hasLocalWorkspace = await fs
+              .access(path.join(app.getPath("userData"), "IndexedDB"))
+              .then(
+                () => true,
+                () => false,
+              );
+            settings = defaultSettings(hasLocalWorkspace);
+          }),
       ]);
       if (closing || quitting) return;
       // Updater modules are not required to paint the first window.
