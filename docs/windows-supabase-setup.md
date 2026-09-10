@@ -1,12 +1,18 @@
 # Studyspace · Windows & Supabase setup
 
-## Install Studyspace 1.0.1
+## Install Studyspace 2.0
 
-Download **Studyspace-Setup-1.0.1-x64.exe** from [Version 1.0.1](https://github.com/SirNoxx/studyspace/releases/tag/v1.0.1), run the installer, and open Studyspace from Start. This is a complete Windows 11 x64 application: Electron, the local server, and the workspace are bundled. You do not need Node.js or a separate browser/server installation. The first release is unsigned; Windows may show an unknown-publisher/SmartScreen prompt. Verify the release source and compare `Get-FileHash .\Studyspace-Setup-1.0.1-x64.exe -Algorithm SHA256` with the release's SHA256SUMS.txt.
+Download **Studyspace-Setup-2.0.0-x64.exe** from [Version 2.0](https://github.com/SirNoxx/studyspace/releases/tag/v2.0.0), run the installer, and open Studyspace from Start. This is a complete Windows 11 x64 application: Electron, the local server, and the workspace are bundled. You do not need Node.js or a separate browser/server installation. The first release is unsigned; Windows may show an unknown-publisher/SmartScreen prompt. Verify the release source and compare `Get-FileHash .\Studyspace-Setup-2.0.0-x64.exe -Algorithm SHA256` with the release's SHA256SUMS.txt.
 
 The local workspace works without a Supabase account. Its private notes and attachments live in the desktop app's IndexedDB under `%APPDATA%\Studyspace`. The embedded server listens only on `127.0.0.1:47831`. Keep this app data directory when upgrading or reinstalling. The installer preserves it, including on uninstall; removing it manually removes local data. Use **Settings → Data → full workspace backup** regularly.
 
 Your earlier browser workspace at `http://127.0.0.1:3000/demo` has separate storage and remains intact. To bring those notes into the desktop app, export a full workspace backup ZIP from the browser's **Settings → Data**, then import it from the desktop workspace's **Settings → Data**. Review the import preview and keep the original ZIP. Signing in or installing the desktop app does not automatically migrate or upload local notes.
+
+## Connect the official Studyspace desktop release
+
+Open **Studyspace → Desktop settings…**, enter `https://studyspace-noxx-studios.vercel.app` under **Studyspace app address**, choose **Save settings**, then **Open cloud workspace**. Use **Create account** on the sign-in page, or sign in with an existing Studyspace account. The app remembers the connected workspace for its next launch. Local notes remain separate and are never uploaded automatically.
+
+The production web project is `studyspace` in Vercel's `noxx-studios` team, linked to `SirNoxx/studyspace` on `main`. It uses the existing Supabase project. Production credentials are stored in Vercel environment settings and never bundled into the installer. The Vercel build uses webpack because the current Turbopack adapter failed while looking for `next-server.js.nft.json` after compilation.
 
 ## How the Supabase connection works
 
