@@ -1,5 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import {
+  yCollab,
+  yUndoManagerKeymap,
+  ySyncAnnotation,
+} from "y-codemirror.next";
+import type { Text as SharedText } from "yjs";
 import { codeBlockExtension } from "./EditorCodeBlocks";
 import {
   newCodeBlock,
@@ -8,6 +14,12 @@ import {
 } from "@/lib/code-blocks";
 import { newWhiteboard } from "@/lib/whiteboard";
 import ModuleGallery from "./ModuleGallery";
+import PastedLink from "./PastedLink";
+import { newModule } from "@/lib/modules";
+import { studyCodeBlocks } from "@/lib/code-blocks";
+import { wordAtPosition } from "@/lib/spelling";
+import SpellingSuggestions from "./SpellingSuggestions";
+import { spellingExtension, grammarAtPosition } from "./EditorSpelling";
 import { EditorState, Compartment, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -32,6 +44,7 @@ import {
   defaultHighlightStyle,
   bracketMatching,
   syntaxTree,
+  ensureSyntaxTree,
   HighlightStyle,
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
@@ -40,7 +53,7 @@ import {
   closeBracketsKeymap,
   autocompletion,
 } from "@codemirror/autocomplete";
-import { conceptMatches } from "@/lib/markdown";
+import { conceptMatches, definitionLinks } from "@/lib/markdown";
 import type { Definition, Attachment } from "@/lib/model";
 import { findAttachment } from "@/lib/attachments";
 import { EditorImage } from "./EditorImage";
@@ -50,6 +63,12 @@ export interface EditorHandle {
   selection: () => string;
   range: () => { from: number; to: number };
   focus: () => void;
+  replaceRange?: (
+    from: number,
+    to: number,
+    expected: string,
+    text: string,
+  ) => boolean;
 }
 export default function Editor({
   id,
@@ -67,7 +86,11 @@ export default function Editor({
   onChat,
   onYoutubePaste,
   onBlockAction,
+  sharedText,
+  readOnly = false,
 }: {
+  sharedText?: SharedText;
+  readOnly?: boolean;
   id: string;
   body: string;
   mode: "source" | "live";
@@ -84,8 +107,26 @@ export default function Editor({
   onYoutubePaste?: (url: string) => void;
   onBlockAction?: (action: BlockAction, block: StudyCodeBlock) => void;
 }) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    word?: {
+      from: number;
+      to: number;
+      word: string;
+      grammar?: { suggestions: string[]; reason: string };
+      noteId: string;
+      body: string;
+    };
+  } | null>(null);
   const [modules, setModules] = useState(false);
+  const [pastedLink, setPastedLink] = useState<{
+    url: string;
+    id: string;
+    body: string;
+    from: number;
+    to: number;
+  } | null>(null);
   const parent = useRef<HTMLDivElement>(null),
     view = useRef<EditorView | null>(null),
     states = useRef(new Map<string, EditorState>()),
@@ -110,6 +151,26 @@ export default function Editor({
     onBlockAction,
   };
   const compartment = useRef(new Compartment());
+  useEffect(() => {
+    const insert = (event: Event) => {
+      const point = (event as CustomEvent<{ x: number; y: number }>).detail;
+      const rect = parent.current?.getBoundingClientRect();
+      if (
+        !rect ||
+        !point ||
+        point.x < rect.left ||
+        point.x > rect.right ||
+        point.y < rect.top ||
+        point.y > rect.bottom
+      )
+        return;
+      const pos = view.current?.posAtCoords(point);
+      if (pos != null) view.current?.dispatch({ selection: { anchor: pos } });
+      setModules(true);
+    };
+    window.addEventListener("studyspace:add-module", insert);
+    return () => window.removeEventListener("studyspace:add-module", insert);
+  }, []);
   const embeddedBlocks = useRef<ReturnType<typeof codeBlockExtension> | null>(
     null,
   );
@@ -218,6 +279,41 @@ export default function Editor({
                 },
               }),
             });
+          for (const link of definitionLinks(v.state.doc.toString())) {
+            if (link.to < start || link.from > end) continue;
+            const entry = definitionsRef.current.find(
+              (d) => d.id === link.id && !d.trashed,
+            );
+            marks.push({
+              from: link.labelFrom,
+              to: link.labelTo,
+              value: Decoration.mark({
+                class: "cm-concept",
+                attributes: entry
+                  ? { "data-definition": entry.id, title: entry.definition }
+                  : { title: "Definition unavailable" },
+              }),
+            });
+            const line = v.state.doc.lineAt(link.from);
+            if (
+              modeRef.current === "live" &&
+              !v.state.selection.ranges.some(
+                (r) =>
+                  r.from <= v.state.doc.lineAt(link.to).to && r.to >= line.from,
+              )
+            ) {
+              marks.push({
+                from: link.from,
+                to: link.labelFrom,
+                value: Decoration.replace({}),
+              });
+              marks.push({
+                from: link.labelTo,
+                to: link.to,
+                value: Decoration.replace({}),
+              });
+            }
+          }
           return Decoration.set(
             marks.map((m) => m.value.range(m.from, m.to)),
             true,
@@ -238,7 +334,11 @@ export default function Editor({
       state: EditorState.create({
         doc: body,
         extensions: [
-          history(),
+          ...(sharedText
+            ? [yCollab(sharedText, null), keymap.of(yUndoManagerKeymap)]
+            : [history()]),
+          EditorView.editable.of(!readOnly),
+          spellingExtension,
           drawSelection(),
           placeholder("Type here..."),
           highlightActiveLine(),
@@ -274,6 +374,54 @@ export default function Editor({
             ],
           }),
           keymap.of([
+            {
+              key: "Enter",
+              run: (editor) => {
+                if (
+                  modeRef.current !== "live" ||
+                  !editor.state.selection.main.empty
+                )
+                  return false;
+                const cursor = editor.state.selection.main.head,
+                  line = editor.state.doc.lineAt(cursor);
+                const match = /^\s*(def|uses):\s*$/.exec(line.text);
+                if (!match || cursor !== line.to) return false;
+                const parsed = ensureSyntaxTree(editor.state, cursor, 50);
+                if (!parsed) return false;
+                for (
+                  let node: ReturnType<
+                    ReturnType<typeof syntaxTree>["resolveInner"]
+                  > | null = parsed.resolveInner(cursor, -1);
+                  node;
+                  node = node.parent
+                )
+                  if (
+                    ["FencedCode", "CodeBlock", "CodeText"].includes(node.name)
+                  )
+                    return false;
+                const text = newModule(
+                    match[1] === "def" ? "definition" : "uses",
+                  ),
+                  block = studyCodeBlocks(text)[0];
+                editor.dispatch({
+                  changes: { from: line.from, to: line.to, insert: text },
+                  selection: { anchor: line.from + text.length },
+                  scrollIntoView: true,
+                });
+                let attempts = 0;
+                const focus = () => {
+                  const field = editor.dom.querySelector<
+                    HTMLInputElement | HTMLTextAreaElement
+                  >(
+                    `[data-block-id="${block.id}"] ${match[1] === "def" ? 'input[aria-label="Term to define"]' : 'textarea[aria-label="Use cases"]'}`,
+                  );
+                  if (field) field.focus();
+                  else if (attempts++ < 12) requestAnimationFrame(focus);
+                };
+                requestAnimationFrame(focus);
+                return true;
+              },
+            },
             ...closeBracketsKeymap,
             ...defaultKeymap,
             ...historyKeymap,
@@ -304,11 +452,15 @@ export default function Editor({
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             "aria-label": "Markdown editor",
-            spellcheck: "true",
+            spellcheck: "false",
           }),
           compartment.current.of(extensions()),
           EditorView.updateListener.of((u) => {
-            if (u.docChanged)
+            if (
+              u.docChanged &&
+              (!sharedText ||
+                !u.transactions.some((t) => t.annotation(ySyncAnnotation)))
+            )
               callbacks.current.onChange(u.state.doc.toString());
             if (u.selectionSet) {
               const s = u.state.selection.main;
@@ -322,7 +474,7 @@ export default function Editor({
                 ?.getAttribute("data-definition");
               if (id) callbacks.current.onDefinition(id);
             },
-            paste: (e) => {
+            paste: (e, editor) => {
               const files = Array.from(e.clipboardData?.files ?? []);
               if (files.length) {
                 e.preventDefault();
@@ -330,7 +482,33 @@ export default function Editor({
                 return true;
               }
               const text = e.clipboardData?.getData("text/plain").trim();
-              if (text) callbacks.current.onYoutubePaste?.(text);
+              if (
+                text &&
+                /^https?:\/\/\S+$/i.test(text) &&
+                text.length <= 2048
+              ) {
+                try {
+                  const url = new URL(text);
+                  if (
+                    !["https:", "http:"].includes(url.protocol) ||
+                    url.username ||
+                    url.password
+                  )
+                    return false;
+                  e.preventDefault();
+                  const range = editor.state.selection.main;
+                  setPastedLink({
+                    url: url.href,
+                    id: active.current,
+                    body: editor.state.doc.toString(),
+                    from: range.from,
+                    to: range.to,
+                  });
+                  return true;
+                } catch {
+                  return false;
+                }
+              }
               return false;
             },
             drop: (e) => {
@@ -382,6 +560,23 @@ export default function Editor({
     view.current = editor;
     templateState.current = editor.state;
     handle.current = {
+      replaceRange: (from, to, expected, text) => {
+        if (
+          readOnly ||
+          from < 0 ||
+          to > editor.state.doc.length ||
+          from > to ||
+          editor.state.sliceDoc(from, to) !== expected
+        )
+          return false;
+        editor.dispatch({
+          changes: { from, to, insert: text },
+          selection: { anchor: from + text.length },
+          userEvent: "input.definition",
+        });
+        editor.focus();
+        return true;
+      },
       range: () => ({
         from: editor.state.selection.main.from,
         to: editor.state.selection.main.to,
@@ -438,7 +633,7 @@ export default function Editor({
         );
       }
       v.dispatch({ effects: compartment.current.reconfigure(extensions()) });
-    } else if (v.state.doc.toString() !== body) {
+    } else if (!sharedText && v.state.doc.toString() !== body) {
       // Preserve embedded editors and their focus when another pane or a save
       // refresh changes only part of the note. Replacing the entire document
       // unnecessarily removes every embedded widget from the view.
@@ -486,22 +681,101 @@ export default function Editor({
   }, [menu]);
   return (
     <>
+      {pastedLink && (
+        <PastedLink
+          url={pastedLink.url}
+          onClose={() => setPastedLink(null)}
+          onInsert={(text) => {
+            const v = view.current;
+            if (
+              !v ||
+              active.current !== pastedLink.id ||
+              v.state.doc.toString() !== pastedLink.body
+            )
+              throw Error(
+                "The note changed while this dialog was open. Close it and paste the link again.",
+              );
+            v.dispatch({
+              changes: {
+                from: pastedLink.from,
+                to: pastedLink.to,
+                insert: text,
+              },
+              selection: { anchor: pastedLink.from + text.length },
+            });
+            callbacks.current.onYoutubePaste?.(pastedLink.url);
+            setPastedLink(null);
+            requestAnimationFrame(() => v.focus());
+          }}
+        />
+      )}
       <div
         className={"editor-host mode-" + mode}
         ref={parent}
         onContextMenu={(event) => {
           if ((event.target as HTMLElement).closest(".code-cell-widget"))
             return;
-          event.preventDefault();
           const position = view.current?.posAtCoords({
             x: event.clientX,
             y: event.clientY,
           });
+          const state = view.current?.state;
+          const line =
+            position != null && state ? state.doc.lineAt(position) : null;
+          const grammar =
+            state && position != null
+              ? grammarAtPosition(state, position)
+              : undefined;
+          const word =
+            line && position != null
+              ? wordAtPosition(line.text, position - line.from)
+              : null;
+          const node =
+            state && position != null
+              ? ensureSyntaxTree(state, position, 50)?.resolveInner(
+                  position,
+                  -1,
+                )
+              : null;
+          let inCode = !node;
+          for (let current = node; current; current = current.parent)
+            if (
+              ["FencedCode", "CodeBlock", "CodeText", "InlineCode"].includes(
+                current.name,
+              )
+            )
+              inCode = true;
+          event.preventDefault();
           if (position != null)
             view.current?.dispatch({ selection: { anchor: position } });
           setMenu({
-            x: Math.min(event.clientX, innerWidth - 200),
-            y: Math.max(8, Math.min(event.clientY, innerHeight - 130)),
+            x: Math.max(8, Math.min(event.clientX, innerWidth - 240)),
+            y: Math.max(
+              8,
+              Math.min(
+                event.clientY,
+                innerHeight - (word && !inCode ? 360 : 130),
+              ),
+            ),
+            ...(word && line && state && !inCode
+              ? {
+                  word: {
+                    ...word,
+                    from: line.from + word.from,
+                    to: line.from + word.to,
+                    ...(grammar
+                      ? {
+                          from: grammar.from,
+                          to: grammar.to,
+                          word: grammar.word,
+                          grammar,
+                        }
+                      : {}),
+                    noteId: active.current,
+                    body: state.doc.toString(),
+                  },
+                }
+              : {}),
           });
         }}
       />
@@ -509,10 +783,68 @@ export default function Editor({
         <div
           className="note-insert-menu"
           role="menu"
-          aria-label="Insert into note"
+          aria-label={
+            menu.word ? "Note spelling and options" : "Insert into note"
+          }
           style={{ left: menu.x, top: menu.y }}
           onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            const buttons = Array.from(
+              event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                "button:not(:disabled)",
+              ),
+            );
+            const index = buttons.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              buttons[
+                (index +
+                  (event.key === "ArrowDown" ? 1 : -1) +
+                  buttons.length) %
+                  buttons.length
+              ]?.focus();
+            }
+          }}
+          ref={(element) => {
+            if (element && !element.contains(document.activeElement))
+              element
+                .querySelector<HTMLButtonElement>("button")
+                ?.focus({ preventScroll: true });
+          }}
         >
+          {menu.word && (
+            <SpellingSuggestions
+              word={menu.word.word}
+              onAccept={() => {
+                setMenu(null);
+                view.current?.focus();
+              }}
+              grammar={menu.word.grammar}
+              onReplace={(replacement) => {
+                const editor = view.current,
+                  target = menu.word!;
+                setMenu(null);
+                if (
+                  !editor ||
+                  active.current !== target.noteId ||
+                  editor.state.doc.toString() !== target.body
+                )
+                  return;
+                editor.dispatch({
+                  changes: {
+                    from: target.from,
+                    to: target.to,
+                    insert: replacement,
+                  },
+                  selection: { anchor: target.from + replacement.length },
+                  userEvent: "input.spelling",
+                });
+                editor.focus();
+              }}
+            />
+          )}
           <button
             role="menuitem"
             onClick={() => {
@@ -521,24 +853,6 @@ export default function Editor({
             }}
           >
             Add a module
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              handle.current?.insert(newCodeBlock());
-              setMenu(null);
-            }}
-          >
-            Add code block
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              handle.current?.insert(newWhiteboard());
-              setMenu(null);
-            }}
-          >
-            Add whiteboard
           </button>
         </div>
       )}

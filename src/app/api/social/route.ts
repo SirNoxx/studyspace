@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sessionClient, requireUser } from "@/lib/supabase/server";
+import { sessionClient, requireUser, adminClient } from "@/lib/supabase/server";
 import { assertSameOrigin } from "@/lib/server/repository";
 
 export const dynamic = "force-dynamic";
@@ -152,6 +152,31 @@ export async function GET(request: Request) {
       p_filter: filter,
     });
     if (error) throw error;
+    if (kind === "shared" && data?.items?.length) {
+      // Only count membership for collections already authorized by the RPC.
+      const members = new Map<string, number>();
+      for (let from = 0; ; from += 1000) {
+        const counts = await adminClient()
+          .from("shared_members")
+          .select("collection_id")
+          .in(
+            "collection_id",
+            data.items.map((item: { id: string }) => item.id),
+          )
+          .order("collection_id")
+          .order("user_id")
+          .range(from, from + 999);
+        if (counts.error) throw counts.error;
+        for (const row of counts.data ?? [])
+          members.set(
+            row.collection_id,
+            (members.get(row.collection_id) ?? 0) + 1,
+          );
+        if ((counts.data?.length ?? 0) < 1000) break;
+      }
+      for (const item of data.items)
+        item.member_count = members.get(item.id) ?? 0;
+    }
     return Response.json(data, { headers });
   } catch (error) {
     return failure(error, "query");

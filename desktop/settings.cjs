@@ -5,7 +5,7 @@ function defaultSettings(hasLocalWorkspace = false) {
   return {
     cloudOrigin: DEFAULT_CLOUD_ORIGIN,
     automaticUpdates: true,
-    lastWorkspace: hasLocalWorkspace ? "local" : "cloud",
+    lastWorkspace: "local",
   };
 }
 
@@ -14,7 +14,7 @@ function restoreSettings(saved) {
     cloudOrigin: cloudOrigin(saved.cloudOrigin || DEFAULT_CLOUD_ORIGIN),
     automaticUpdates: saved.automaticUpdates !== false,
     // An upgrade must not move an existing user's local workspace.
-    lastWorkspace: saved.lastWorkspace === "cloud" ? "cloud" : "local",
+    lastWorkspace: "local",
   };
 }
 

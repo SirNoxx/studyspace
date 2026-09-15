@@ -24,21 +24,20 @@
         <h2>A space that stays with you</h2>
         <p>
           Your local notes are saved on this computer. Export a full workspace
-          backup in Settings → Data to move work between the browser, desktop,
-          and cloud.
+          backup in Settings → Data to move work between devices. Signing in enables community and AI alongside these notes.
         </p>
         <button id="local" type="button" class="primary">
-          Open local workspace <span aria-hidden="true">↗</span>
+          Open my notes <span aria-hidden="true">↗</span>
         </button>
       </section>
       <section>
         <div class="section-heading">
-          <h2>Connect your cloud workspace</h2>
+          <h2>Connect your account</h2>
           <span class="badge">OPTIONAL</span>
         </div>
         <p>
           Use the address of your hosted Studyspace app. Your app server
-          connects to Supabase and manages accounts and published research.
+          connects to Supabase for identity, AI, collaboration and published research. Personal notes stay on this device.
         </p>
         <form id="settings-form">
           <label for="cloud">Studyspace app address</label
@@ -58,7 +57,7 @@
           >
           <div class="actions">
             <button type="submit" class="primary">Save settings</button
-            ><button id="cloud-open" type="button">Open cloud workspace</button>
+            ><button id="cloud-open" type="button">Sign in with browser</button>
           </div>
         </form>
         <p id="feedback" role="status" aria-live="polite"></p>

@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState, useEffect } from "react";
+import { localDateKey } from "@/lib/dates";
 import {
   MoreHorizontal,
   ChevronDown,
@@ -376,6 +377,69 @@ export default function NoteModule({
     );
   let content: React.ReactNode;
   switch (data.kind) {
+    case "definition":
+      content = (
+        <div className="definition-module">
+          <label className="module-field">
+            <span>Term</span>
+            {readOnly ? (
+              <strong>{data.term || "Untitled concept"}</strong>
+            ) : (
+              <input
+                aria-label="Term to define"
+                maxLength={500}
+                value={data.term}
+                onChange={(e) => update({ ...data, term: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.currentTarget
+                      .closest(".definition-module")
+                      ?.querySelector<HTMLTextAreaElement>("textarea")
+                      ?.focus();
+                  }
+                }}
+              />
+            )}
+          </label>
+          {field(
+            "Definition",
+            data.explanation,
+            (explanation) => update({ ...data, explanation }),
+            "Explain this concept in your own words…",
+          )}
+          <label className="definition-learned">
+            <input
+              type="checkbox"
+              disabled={readOnly}
+              checked={data.learned}
+              onChange={(e) =>
+                update({
+                  ...data,
+                  learned: e.target.checked,
+                  learnedAt: e.target.checked
+                    ? new Date().toISOString()
+                    : undefined,
+                })
+              }
+            />{" "}
+            Mark concept as learned
+          </label>
+        </div>
+      );
+      break;
+    case "uses":
+      content = (
+        <div className="uses-module">
+          {field(
+            "Use cases",
+            data.text,
+            (text) => update({ ...data, text }),
+            "Where and when is this useful? Add examples…",
+          )}
+        </div>
+      );
+      break;
     case "cornell":
       content = (
         <div className="cornell-module">
@@ -967,7 +1031,11 @@ export default function NoteModule({
               {Array.from({ length: days }, (_, i) => {
                 const day = `${data.month}-${String(i + 1).padStart(2, "0")}`;
                 return (
-                  <div className="calendar-day" key={day}>
+                  <div
+                    className="calendar-day"
+                    key={day}
+                    aria-current={day === localDateKey() ? "date" : undefined}
+                  >
                     <span>{i + 1}</span>
                     {readOnly ? (
                       <div className="module-text">{data.entries[day]}</div>

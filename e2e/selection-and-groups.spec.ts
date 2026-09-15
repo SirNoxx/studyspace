@@ -151,6 +151,6 @@ test("reading selections have nearby actions within a narrow viewport", async ({
     () => window.getSelection()!.getRangeAt(0).getClientRects()[0].top,
   );
   expect(box.y + box.height).toBeLessThanOrEqual(top - 6);
-  await actions.getByRole("button", { name: "Add to dictionary" }).click();
+  await actions.getByRole("button", { name: "Create definition" }).click();
   await expect(page.getByLabel("Word or phrase")).not.toHaveValue("");
 });

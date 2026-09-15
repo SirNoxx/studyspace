@@ -15,12 +15,16 @@ import {
 } from "./domain";
 import { resolveLink } from "./markdown";
 import { parseDocument } from "yaml";
+import { learningSettingsSchema } from "./learning-schema";
+import { syncModuleDefinitions } from "./module-definitions";
 export function assetMime(path: string) {
   const ext = path.split(".").at(-1)?.toLowerCase();
   return (
     (
       {
         pdf: "application/pdf",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        doc: "application/msword",
         png: "image/png",
         jpg: "image/jpeg",
         jpeg: "image/jpeg",
@@ -138,6 +142,35 @@ export async function prepareImport(files: File[]): Promise<ImportPlan> {
     } else unpacked.push({ path: file.webkitRelativePath || file.name, bytes });
   }
   const plan: ImportPlan = { files: [], warnings: [], totalBytes: 0 };
+  const originals = [...unpacked];
+  if (
+    unpacked.length > importLimits.entries ||
+    unpacked.reduce((sum, item) => sum + item.bytes.length, 0) >
+      importLimits.expanded
+  )
+    throw new DomainError(
+      "Import exceeds the file count or expanded size limit.",
+    );
+  for (const item of originals) {
+    const ext = item.path.split(".").at(-1)?.toLowerCase();
+    if (!ext || !["docx", "pdf", "txt", "doc"].includes(ext)) continue;
+    try {
+      if (ext === "docx") inspectZip(item.bytes);
+      const { documentToMarkdown } = await import("./document-conversion");
+      const result = await documentToMarkdown(item.bytes, ext);
+      const name = item.path.split("/").at(-1)!;
+      unpacked.push({
+        path: item.path + ".md",
+        bytes: strToU8(
+          result.markdown +
+            `\n\n[Original document](${encodeURIComponent(name)})\n`,
+        ),
+      });
+      plan.warnings.push(...result.warnings.map((w) => item.path + ": " + w));
+    } catch (e) {
+      plan.warnings.push(item.path + ": " + (e as Error).message);
+    }
+  }
   const seen = new Set<string>();
   for (const item of unpacked) {
     if (plan.files.length >= importLimits.entries)
@@ -166,7 +199,9 @@ export async function prepareImport(files: File[]): Promise<ImportPlan> {
         reason = "Invalid UTF-8. Save this file as UTF-8 and retry.";
       }
     } else if (
-      /\.(png|jpe?g|webp|gif|pdf|mp3|wav|mp4|txt|canvas|base)$/i.test(path)
+      /\.(png|jpe?g|webp|gif|pdf|docx|doc|mp3|wav|mp4|txt|canvas|base)$/i.test(
+        path,
+      )
     )
       kind = "asset";
     const folded = path.toLowerCase().replace(/[. ]+(?=\/|$)/g, "");
@@ -317,6 +352,11 @@ function restoreManifest(
     );
   if (manifest.notes.length > importLimits.entries)
     throw new DomainError("Backup contains too many notes.");
+  const learning = learningSettingsSchema.safeParse(manifest.settings ?? {});
+  if (!learning.success)
+    throw new DomainError(
+      "Backup contains invalid learning data. No notes were imported.",
+    );
   const warnings = [...plan.warnings],
     map: Record<string, string> = {},
     notes: Note[] = [];
@@ -407,11 +447,22 @@ function restoreManifest(
   for (const d of manifest.definitions ?? []) {
     if (typeof d.term !== "string" || typeof d.definition !== "string")
       continue;
-    const id = uid();
+    const linked =
+      typeof d.moduleBlockId === "string"
+        ? w.definitions.find(
+            (entry) =>
+              entry.noteId === map[d.noteId] &&
+              entry.moduleBlockId === d.moduleBlockId,
+          )
+        : undefined;
+    const id = linked?.id ?? uid();
     map[d.id] = id;
-    w.definitions.push({
+    const entry = {
       id,
       noteId: map[d.noteId],
+      ...(typeof d.moduleBlockId === "string"
+        ? { moduleBlockId: d.moduleBlockId }
+        : {}),
       term: d.term,
       definition: d.definition,
       aliases: Array.isArray(d.aliases) ? d.aliases : [],
@@ -420,7 +471,9 @@ function restoreManifest(
         .filter(Boolean),
       createdAt: d.createdAt ?? now(),
       updatedAt: d.updatedAt ?? now(),
-    });
+    };
+    if (linked) Object.assign(linked, entry);
+    else w.definitions.push(entry);
   }
   for (const s of manifest.sources ?? []) {
     const id = uid();
@@ -501,6 +554,26 @@ function restoreManifest(
         groupId: map[r.groupId],
         subjectId: map[r.subjectId],
       });
+  for (const path of learning.data.learningPaths ?? []) {
+    const root = w.containers.find((c) => c.id === map[path.rootId]);
+    if (!root) continue;
+    root.parentId = null;
+    root.kind = "folder";
+    const id = uid();
+    (w.settings.learningPaths ??= []).push({
+      ...path,
+      id,
+      rootId: root.id,
+      concepts: path.concepts.map((c) => ({ ...c, id: uid() })),
+    });
+    if (learning.data.activeLearningPath === path.id)
+      w.settings.activeLearningPath = id;
+  }
+  for (const topic of learning.data.learningTopics ?? []) {
+    const topics = (w.settings.learningTopics ??= []);
+    if (!topics.some((t) => t.id === topic.id)) topics.push(topic);
+  }
+  for (const note of notes) syncModuleDefinitions(w, note);
   for (const a of manifest.ai ?? [])
     if (map[a.noteId]) w.ai.push({ ...a, id: uid(), noteId: map[a.noteId] });
   if (manifest.copies?.length)

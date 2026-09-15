@@ -1,0 +1,39 @@
+{
+  "version": "2.1.0",
+  "checkedAt": "2026-09-15T18:17:58.465Z",
+  "node": "v24.11.1",
+  "applicationTests": 159,
+  "desktopTests": 16,
+  "browserTests": 14,
+  "packagedChecks": [
+    "isolated renderer",
+    "immediate-close saving",
+    "restart persistence",
+    "fresh and legacy connection settings",
+    "startup loading screen and port conflicts",
+    "native account handoff with mocked hosted service",
+    "incremental AI streaming through native bridge",
+    "sign-out credential removal",
+    "NSIS updater download SHA512 verification and corrupt-manifest rejection"
+  ],
+  "hostedDeploymentPerformed": false,
+  "hostedMigrationsApplied": false,
+  "installerExecuted": false,
+  "assets": [
+    {
+      "name": "Studyspace-Setup-2.1.0-x64.exe",
+      "bytes": 157899445,
+      "sha256": "a397536e6a3d9fa741a8b5a7e78802f18e70a97c9b7f112e81a16eebfe15593f"
+    },
+    {
+      "name": "Studyspace-Setup-2.1.0-x64.exe.blockmap",
+      "bytes": 165089,
+      "sha256": "c45cf462f67daf8b47e0664bfa70622edf2211cf703a12c3fe2eac4f3123c657"
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 357,
+      "sha256": "b39f359d7620607898de19c6f0e5931667879a4097408736f2a71a38441e4e30"
+    }
+  ]
+}

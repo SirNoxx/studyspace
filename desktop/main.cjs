@@ -8,7 +8,9 @@ const {
   dialog,
   utilityProcess,
   Notification,
+  safeStorage,
 } = require("electron");
+const { CloudBridge } = require("./cloud-bridge.cjs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const net = require("node:net");
@@ -54,6 +56,7 @@ function markStartup(stage) {
   if (smoke) global.__studyspaceStartupTimings = { ...startupTimings };
 }
 let settings = defaultSettings();
+let bridge, bridgeEnvironment = {};
 const settingsFile = () =>
   path.join(app.getPath("userData"), "desktop-settings.json");
 const desktopState = () => ({
@@ -95,7 +98,7 @@ async function launchLocalServer() {
   if (closing || quitting) return;
   server = utilityProcess.fork(path.join(web, "server.js"), [], {
     cwd: web,
-    env: serverEnvironment(port),
+    env: {...serverEnvironment(port),...bridgeEnvironment},
     stdio: "pipe",
     serviceName: "Studyspace local workspace",
   });
@@ -207,6 +210,7 @@ function guard(window, origin) {
   window.webContents.session.setPermissionCheckHandler(() => false);
 }
 async function openWorkspace(kind) {
+  if (kind === "cloud") { await bridge.signIn(); return; }
   if (opening || closing || quitting) return;
   if (!["local", "cloud"].includes(kind))
     throw new Error("Choose a local or connected workspace.");
@@ -276,12 +280,12 @@ function installMenu() {
         label: "Studyspace",
         submenu: [
           {
-            label: "Local workspace",
+            label: "My notes",
             click: action(() => openWorkspace("local")),
           },
           {
-            label: "Connected cloud workspace",
-            click: action(() => openWorkspace("cloud")),
+            label: "Sign in to cloud features…",
+            click: action(() => bridge.signIn()),
           },
           { label: "Desktop settings…", click: showSettings },
           { type: "separator" },
@@ -363,9 +367,11 @@ function registerIPC() {
       typeof value.automaticUpdates !== "boolean"
     )
       throw new Error("Invalid settings.");
+    const nextOrigin=cloudOrigin(value.cloudOrigin);
+    if(nextOrigin!==settings.cloudOrigin)await bridge?.clearSession();
     settings = {
       ...settings,
-      cloudOrigin: cloudOrigin(value.cloudOrigin),
+      cloudOrigin: nextOrigin,
       automaticUpdates: value.automaticUpdates,
     };
     if (!settings.cloudOrigin) settings.lastWorkspace = "local";
@@ -406,6 +412,7 @@ else {
         backgroundColor: "#f5f7f2",
         icon: path.join(__dirname, "build", "icon.png"),
         webPreferences: {
+          preload: path.join(__dirname, "workspace-preload.cjs"),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
@@ -414,11 +421,30 @@ else {
         },
       });
       markStartup("windowCreatedMs");
+      mainWindow.webContents.on("context-menu", async (_event, params) => {
+        // The note editor supplies local spelling AND contextual grammar suggestions.
+        // Keep native menus for other fields and code cells.
+        if (Number.isFinite(params.x) && Number.isFinite(params.y)) {
+          try {
+            const custom = await mainWindow.webContents.executeJavaScript(`(() => { const el=document.elementFromPoint(${params.x},${params.y}); return !!el?.closest('.editor-host,.selected-text-menu') && !el?.closest('.code-cell-widget'); })()`);
+            if (custom) return;
+          } catch { return; }
+        }
+        if (!params.isEditable) return;
+        const menu = [];
+        if (params.misspelledWord) {
+          for (const suggestion of params.dictionarySuggestions.slice(0,8))
+            menu.push({label:suggestion,click:() => mainWindow.webContents.replaceMisspelling(suggestion)});
+          if (!params.dictionarySuggestions.length) menu.push({label:"No spelling suggestions",enabled:false});
+          menu.push({label:"Add to dictionary",click:() => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)}, {type:"separator"});
+        }
+        menu.push({role:"undo"},{role:"redo"},{type:"separator"},{role:"cut"},{role:"copy"},{role:"paste"},{role:"selectAll"},{type:"separator"},
+          {label:"Add a module",click:() => mainWindow.webContents.send("device:add-module",{x:params.x,y:params.y})});
+        Menu.buildFromTemplate(menu).popup({window:mainWindow});
+      });
       mainWindow.setMenu(null);
       mainWindow.setProgressBar(2);
-      guard(mainWindow, () =>
-        settings.lastWorkspace === "cloud" ? settings.cloudOrigin : localOrigin,
-      );
+      guard(mainWindow, () => localOrigin);
       mainWindow.on("close", (event) => {
         if (closing) return;
         event.preventDefault();
@@ -487,6 +513,19 @@ else {
         },
       });
       registerIPC();
+      bridge = new CloudBridge({origin:()=>settings.cloudOrigin || DEFAULT_CLOUD_ORIGIN,folder:app.getPath("userData"),safeStorage,
+        openExternal:(url)=>shell.openExternal(url),onConnected:()=>{
+          if(mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send("device:account-changed");mainWindow.show();mainWindow.focus();
+          }
+        }});
+      bridgeEnvironment = await bridge.start();
+      const deviceHandler=(fn)=>(event)=>{
+        if(event.sender!==mainWindow.webContents || event.senderFrame!==mainWindow.webContents.mainFrame || new URL(event.senderFrame.url).origin!==localOrigin)throw Error("Untrusted account request");
+        return fn();
+      };
+      ipcMain.handle("device:sign-in",deviceHandler(()=>bridge.signIn()));
+      ipcMain.handle("device:sign-out",deviceHandler(()=>bridge.signOut()));
       installMenu();
       // Only the isolated smoke harness can simulate a slow startup.
       if (smoke) {
@@ -499,7 +538,7 @@ else {
           );
       }
       if (closing || quitting) return;
-      const cloud = settings.lastWorkspace === "cloud" && settings.cloudOrigin;
+      const cloud = false;
       if (!cloud) {
         await ensureLocalServer();
         markStartup("localServerReadyMs");
@@ -557,6 +596,7 @@ else {
   });
   app.on("will-quit", () => {
     quitting = true;
+    bridge?.close();
     updater?.stop();
     server?.kill();
   });

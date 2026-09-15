@@ -1,5 +1,7 @@
 "use client";
 import { quickNotesContainer } from "@/lib/quick-notes";
+import SharedHistory from "./social/SharedHistory";
+import CollectionIconPicker from "./CollectionIconPicker";
 import QuickNoteMove from "./QuickNoteMove";
 import PublishPicker from "./PublishPicker";
 import { publicationCandidates } from "@/lib/publish-picker";
@@ -31,8 +33,12 @@ import {
   Paperclip,
 } from "lucide-react";
 import { type AppContext, type DialogState } from "./WorkspaceApp";
-import { Modal, Field, IconButton, SymbolIcon, icons } from "./ui";
+import { Modal, Field, IconButton, SymbolIcon } from "./ui";
 import Markdown from "./Markdown";
+import DocumentExport from "./DocumentExport";
+import { studyCodeBlocks, codeFence } from "@/lib/code-blocks";
+import { parseModule } from "@/lib/modules";
+import { publishDeviceSnapshot } from "@/lib/device-publishing";
 import {
   uid,
   now,
@@ -429,8 +435,12 @@ export default function Dialogs({
   }
   if (dialog.type === "folder-attachments")
     return <AttachmentsPanel ctx={ctx} id={dialog.id!} onClose={onClose} />;
+  if (dialog.type === "review-preview") {
+    const card=w.review.find(item=>item.id===dialog.id);
+    return <Modal title="Study card" onClose={onClose}>{card?<><Markdown body={card.front}/><details><summary>Show answer</summary><Markdown body={card.back}/></details></>:<p>This card is no longer available.</p>}</Modal>;
+  }
   if (dialog.type === "hyperlink")
-    return <HyperlinkDialog ctx={ctx} onClose={onClose} />;
+    return <HyperlinkDialog ctx={ctx} dialog={dialog} onClose={onClose} />;
   if (dialog.type === "attachment") {
     const asset = w.attachments.find((a) => a.id === dialog.id);
     return (
@@ -521,8 +531,9 @@ export default function Dialogs({
               {options}
             </select>
           </Field>
-          <div className="form-row">
-            <Field label="Color">
+          <div className="collection-appearance">
+            <div className="field" role="group" aria-label="Collection color">
+              <span>Color</span>
               <div className="color-options">
                 {[
                   "#739b8e",
@@ -543,31 +554,19 @@ export default function Dialogs({
                     {color === c && <Check size={14} />}
                   </button>
                 ))}
-                <input
-                  type="color"
-                  aria-label="Custom color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                />
+                <label className="collection-custom-color">
+                  <input
+                    type="color"
+                    aria-label="Custom color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                  />
+                  <span>Custom color</span>
+                  <code>{color.toUpperCase()}</code>
+                </label>
               </div>
-            </Field>
-            <Field label="Icon">
-              <div className="icon-picker">
-                {Object.keys(icons).map((i) => (
-                  <button
-                    type="button"
-                    key={i}
-                    title={i}
-                    aria-label={"Choose icon " + i}
-                    aria-pressed={icon === i}
-                    onClick={() => setIcon(i)}
-                  >
-                    <SymbolIcon name={i} />
-                    <small>{i}</small>
-                  </button>
-                ))}
-              </div>
-            </Field>
+            </div>
+            <CollectionIconPicker value={icon} onChange={setIcon} />
           </div>
           {dialog.kind !== "folder" && (
             <>
@@ -704,6 +703,35 @@ export default function Dialogs({
                 });
                 for (const r of s.review.filter((r) => r.sourceId === d.id))
                   r.contentChanged = true;
+                if (d.moduleBlockId && d.noteId) {
+                  const source = s.notes.find((n) => n.id === d.noteId),
+                    block =
+                      source &&
+                      studyCodeBlocks(source.body).find(
+                        (b) => b.id === d.moduleBlockId,
+                      );
+                  const module = block && parseModule(block.code);
+                  if (source && block && module?.kind === "definition")
+                    saveNote(
+                      s,
+                      source.id,
+                      source.revision,
+                      {
+                        body:
+                          source.body.slice(0, block.from) +
+                          codeFence({
+                            ...block,
+                            code: JSON.stringify({
+                              ...module,
+                              term: d.term,
+                              explanation: d.definition,
+                            }),
+                          }) +
+                          source.body.slice(block.to),
+                      },
+                      "Definition update",
+                    );
+                }
               } else
                 s.definitions.push({
                   id: uid(),
@@ -729,6 +757,7 @@ export default function Dialogs({
             <input
               autoFocus
               required
+              maxLength={500}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Tool calling"
@@ -760,10 +789,20 @@ export default function Dialogs({
             />
           </Field>
           <Field label="Subject">
-            <select value={parent} onChange={(e) => setParent(e.target.value)}>
+            <select
+              disabled={!!existingDefinition?.moduleBlockId}
+              value={parent}
+              onChange={(e) => setParent(e.target.value)}
+            >
               {options}
             </select>
           </Field>
+          {existingDefinition?.moduleBlockId && (
+            <p className="field-hint">
+              Linked to a Definition module. Edits update its note; its
+              dictionary scope follows the note.
+            </p>
+          )}
           {errors}
           {!existingDefinition && active && (
             <AISuggestion
@@ -797,6 +836,28 @@ export default function Dialogs({
             className="text-button danger"
             onClick={() => {
               mutate((s) => {
+                if (existingDefinition.moduleBlockId) {
+                  const note = s.notes.find(
+                    (n) => n.id === existingDefinition.noteId,
+                  );
+                  const block =
+                    note &&
+                    studyCodeBlocks(note.body).find(
+                      (b) => b.id === existingDefinition.moduleBlockId,
+                    );
+                  if (note && block)
+                    saveNote(
+                      s,
+                      note.id,
+                      note.revision,
+                      {
+                        body:
+                          note.body.slice(0, block.from) +
+                          note.body.slice(block.to),
+                      },
+                      "Remove definition module",
+                    );
+                }
                 s.definitions.find(
                   (d) => d.id === existingDefinition.id,
                 )!.trashed = true;
@@ -804,7 +865,10 @@ export default function Dialogs({
               onClose();
             }}
           >
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} />{" "}
+            {existingDefinition.moduleBlockId
+              ? "Delete definition and module"
+              : "Delete"}
           </button>
           <div className="inline-actions">
             <IconButton
@@ -1109,7 +1173,10 @@ export default function Dialogs({
                   authors: authors
                     ? authors.split(",").map((s) => s.trim())
                     : [],
-                  overrides: sourceTitle ? ["title"] : [],
+                  overrides: [
+                    ...(sourceTitle ? ["title" as const] : []),
+                    ...(authors ? ["authors" as const] : []),
+                  ],
                   manual: true,
                   status: "pending",
                   subjectIds: [parent || general(s).id],
@@ -1521,6 +1588,8 @@ export default function Dialogs({
     );
   if (dialog.type === "web-source")
     return <WebReader ctx={ctx} source={existingSource!} onClose={onClose} />;
+  if (dialog.type === "history" && ctx.collaboration && dialog.id)
+    return <SharedHistory ctx={ctx} id={dialog.id} onClose={onClose} />;
   if (dialog.type === "history") {
     const n = w.notes.find((n) => n.id === dialog.id);
     return (
@@ -1586,13 +1655,24 @@ export default function Dialogs({
       </Modal>
     );
   }
+  if (dialog.type === "document-export") {
+    const note = w.notes.find((n) => n.id === dialog.id) ?? active;
+    return note ? (
+      <DocumentExport
+        note={note}
+        attachments={w.attachments}
+        demo={ctx.demo}
+        onClose={onClose}
+      />
+    ) : null;
+  }
   if (dialog.type === "import")
     return (
       <Modal
         title={
           report ? "Your notes have arrived" : "Bring your knowledge with you"
         }
-        description="Import Markdown directly from Obsidian. Your original files stay untouched."
+        description="Import Markdown, Word, text and text-based PDFs. Review converted notes before adding them; original documents are retained as attachments."
         onClose={onClose}
         wide
       >
@@ -1600,15 +1680,17 @@ export default function Dialogs({
           <>
             <label className="upload-zone">
               <Upload size={30} />
-              <strong>Choose Markdown files or a vault ZIP</strong>
+              <strong>
+                Choose notes, Word documents, PDFs, or a vault ZIP
+              </strong>
               <span>
-                UTF-8 Markdown · 25 MB compressed / 100 MB expanded · 2,000
-                files
+                Markdown, DOCX, PDF, text · 25 MB compressed / 100 MB expanded ·
+                2,000 files
               </span>
               <input
                 type="file"
                 multiple
-                accept=".md,.zip,.pdf,.png,.jpg,.jpeg,.gif,.webp"
+                accept=".md,.txt,.docx,.doc,.zip,.pdf,.png,.jpg,.jpeg,.gif,.webp"
                 onChange={async (e) => {
                   setBusy(true);
                   setError("");
@@ -1742,7 +1824,7 @@ export default function Dialogs({
                   onClick={async () => {
                     setBusy(true);
                     try {
-                      if (!ctx.demo) {
+                      if (!ctx.demo && !ctx.collaboration) {
                         const { zipSync } = await import("fflate"),
                           { browserClient } =
                             await import("@/lib/supabase/browser");
@@ -1801,6 +1883,18 @@ export default function Dialogs({
                         const blob = new Blob([Uint8Array.from(file.bytes)], {
                           type: mime,
                         });
+                        if (ctx.collaboration) {
+                          const asset = await ctx.collaboration.upload(
+                            new File([blob], file.path.split("/").at(-1)!, {
+                              type: mime,
+                            }),
+                          );
+                          importedAssets.push({
+                            ...asset,
+                            filename: file.path,
+                          });
+                          continue;
+                        }
                         if (ctx.demo)
                           await (await localDB()).put("assets", blob, id);
                         else {
@@ -1868,7 +1962,7 @@ export default function Dialogs({
               : "Publication saved"
         }
         description={
-          ctx.demo
+          ctx.demo && !ctx.cloudAccount
             ? "Local demo publication · this does not publish anything to the internet."
             : "Only the reviewed snapshot becomes public. Private edits remain private."
         }
@@ -2202,25 +2296,47 @@ export default function Dialogs({
                   }
                   setBusy(true);
                   try {
-                    if (ctx.demo)
+                    if (ctx.demo || ctx.collaboration) {
+                      const published =
+                        ctx.cloudAccount || ctx.collaboration
+                          ? await publishDeviceSnapshot(
+                              snapshot,
+                              ctx.collaboration
+                                ? async (id) => {
+                                    const response = await fetch(
+                                      "/api/attachments/" + id,
+                                    );
+                                    if (!response.ok)
+                                      throw Error(
+                                        "A selected shared attachment is unavailable.",
+                                      );
+                                    return response.blob();
+                                  }
+                                : undefined,
+                            )
+                          : snapshot;
                       mutate((s) => {
                         const old = s.publications.find(
                           (p) => p.id === snapshot.publicationId,
                         );
                         if (old) {
-                          old.versions.push(snapshot);
-                          old.current = snapshot;
+                          if (!old.versions.some((v) => v.id === published.id))
+                            old.versions.push(published);
+                          old.current = published;
+                          old.cloud = !!(ctx.cloudAccount || ctx.collaboration);
                           old.status = "published";
                         } else
                           s.publications.push({
                             id: snapshot.publicationId,
                             containerId: String(publicationContainerId),
-                            current: snapshot,
-                            versions: [snapshot],
+                            current: published,
+                            versions: [published],
+                            cloud: !!(ctx.cloudAccount || ctx.collaboration),
                             status: "published",
                           });
                       });
-                    else {
+                      setSnapshot(published);
+                    } else {
                       const r = await fetch("/api/publications", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -2255,7 +2371,7 @@ export default function Dialogs({
                 }}
               >
                 <Globe size={15} />
-                {ctx.demo
+                {ctx.demo && !ctx.cloudAccount
                   ? "Save local publication"
                   : existing
                     ? "Publish updates"
@@ -2267,7 +2383,7 @@ export default function Dialogs({
           <div className="publication-success">
             <Check size={36} />
             <h2>
-              {ctx.demo
+              {ctx.demo && !ctx.cloudAccount
                 ? "Your local reader preview is ready."
                 : "Your research is published."}
             </h2>
@@ -2293,15 +2409,21 @@ export default function Dialogs({
     );
   }
   if (dialog.type === "reader") {
-    const p = w.publications.find((p) => p.id === dialog.publicationId);
+    const p = dialog.snapshot
+      ? {
+          id: (dialog.snapshot as Snapshot).publicationId,
+          current: dialog.snapshot as Snapshot,
+          cloud: true,
+        }
+      : w.publications.find((p) => p.id === dialog.publicationId);
     return (
       <Modal title={p?.current.title ?? "Publication"} onClose={onClose} wide>
         {p ? (
           <>
             <div className="public-version-line">
               <Globe size={15} />
-              {ctx.demo ? "LOCAL DEMO · " : ""}Version {p.current.version} ·{" "}
-              {p.current.author}
+              {ctx.demo && !p.cloud ? "LOCAL PREVIEW · " : ""}Version{" "}
+              {p.current.version} · {p.current.author}
             </div>
             <Markdown body={p.current.description} />
             {p.current.notes.map((n) => (
@@ -2311,6 +2433,13 @@ export default function Dialogs({
                   body={n.body}
                   definitions={p.current.definitions}
                   notes={p.current.notes}
+                  attachments={p.current.attachments}
+                  demo={ctx.demo && !p.cloud}
+                  publicAssetBase={
+                    p.cloud || !ctx.demo
+                      ? `/api/public-assets/${p.current.publicationId}/${p.current.id}/`
+                      : undefined
+                  }
                   onLink={(target) => {
                     const n = p.current.notes.find(
                       (n) => n.id === target || n.title === target,

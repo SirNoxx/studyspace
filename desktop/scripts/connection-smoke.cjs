@@ -28,36 +28,24 @@ async function launch(legacy) {
   return app.firstWindow();
 }
 (async () => {
-  let page = await launch(false);
-  await page.waitForURL(DEFAULT_CLOUD_ORIGIN + "/auth**", { timeout: 60000 });
-  await expect(
-    page.getByRole("button", { name: "Create an account", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Create an account", exact: true })
-    .click();
-  await expect(page.getByLabel("Username", { exact: true })).toBeVisible();
-  assert.equal(
-    (await app.evaluate(() => global.__studyspaceStartupTimings))
-      .localServerReadyMs,
-    undefined,
-  );
-  await app.close();
-  app = null;
-  page = await launch(true);
-  await page.waitForURL("http://127.0.0.1:47832/demo**", { timeout: 60000 });
-  await page.goto("http://127.0.0.1:47832/auth");
-  await expect(
-    page.getByRole("link", { name: "Open connected workspace" }),
-  ).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Email" })).toHaveCount(0);
-  await page.getByRole("link", { name: "Open connected workspace" }).click();
-  await page.waitForURL(DEFAULT_CLOUD_ORIGIN + "/auth**", { timeout: 60000 });
-  await expect(
-    page.getByRole("button", { name: "Sign in", exact: true }),
-  ).toBeVisible();
+  for (const legacy of [false, true]) {
+    const page = await launch(legacy);
+    await page.waitForURL("http://127.0.0.1:47832/demo**", { timeout: 60000 });
+    await expect(page.getByText("Make room for your ideas.")).toBeVisible();
+    assert.equal(typeof (await app.evaluate(() => global.__studyspaceStartupTimings)).localServerReadyMs, "number");
+    await app.evaluate(({ shell }) => {
+      shell.openExternal = async url => { global.__connectionSmokeUrl = url; };
+    });
+    await page.evaluate(() => window.studyspaceDevice.signIn());
+    const external = new URL(await app.evaluate(() => global.__connectionSmokeUrl));
+    assert.equal(external.origin, DEFAULT_CLOUD_ORIGIN);
+    assert.equal(external.pathname, "/auth");
+    assert.ok(external.searchParams.get("next").startsWith("/desktop/connect?"));
+    assert.ok(page.url().startsWith("http://127.0.0.1:47832/demo"));
+    await app.close(); app = null;
+  }
   console.log(
-    "PASS: fresh installation opens hosted signup; legacy local data stays local; local sign-in switches to the hosted app inside the same desktop window.",
+    "PASS: fresh and legacy installations keep local notes open; sign-in opens the configured hosted authentication in the external browser without navigating away from notes.",
   );
 })()
   .catch((error) => {

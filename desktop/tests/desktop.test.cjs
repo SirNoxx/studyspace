@@ -15,8 +15,8 @@ const {
   defaultSettings,
   restoreSettings,
 } = require("../settings.cjs");
-test("new installations connect while upgrades retain local work and custom servers", () => {
-  assert.equal(defaultSettings().lastWorkspace, "cloud");
+test("all installations open local notes while retaining cloud connection settings", () => {
+  assert.equal(defaultSettings().lastWorkspace, "local");
   assert.equal(defaultSettings().cloudOrigin, DEFAULT_CLOUD_ORIGIN);
   assert.equal(defaultSettings(true).lastWorkspace, "local");
   assert.deepEqual(

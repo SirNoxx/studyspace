@@ -145,7 +145,8 @@ it("permits only explicitly checked community commands and RLS helpers, and bloc
       "community_visible",
       "is_moderator",
       "public_available",
-      ...(role === "authenticated" ? ["shared_access"] : []),
+      ...(role === "authenticated" ? ["shared_access", "shared_workspace_history", "shared_workspace_read"] : []),
+      ...(role === "authenticated" ? ["workspace_services"] : []),
     ]);
   }
   const { owner, state } = await workspace();

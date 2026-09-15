@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 export const configured = () =>
   Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -11,6 +11,11 @@ export async function sessionClient() {
     throw new Error(
       "Supabase is not configured. Set the public URL and anon key in .env.local.",
     );
+  const authorization = (await headers()).get("authorization");
+  if (authorization?.startsWith("Bearer ")) return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:authorization}}},
+  );
   const jar = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,7 +49,8 @@ export function adminClient() {
 }
 export async function requireUser() {
   const client = await sessionClient();
-  const { data, error } = await client.auth.getUser();
+  const token = (await headers()).get("authorization")?.replace(/^Bearer /,"");
+  const { data, error } = await client.auth.getUser(token);
   if (error || !data.user) throw new Error("AUTH_REQUIRED");
   return { user: data.user, client };
 }

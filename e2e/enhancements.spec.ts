@@ -166,7 +166,7 @@ test("selection creates a grouped card and a stable link without losing Markdown
   await editor.press("Control+End");
   await editor.press("Home");
   await editor.press("Shift+End");
-  await page.getByRole("button", { name: "Insert / edit link" }).click();
+  await page.getByRole("button", { name: "Insert or edit link / definition" }).click();
   await page.getByLabel("Destination type").selectOption("internal");
   await page
     .getByRole("textbox", { name: "Find a note", exact: true })

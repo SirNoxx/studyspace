@@ -1,4 +1,5 @@
 import { type Workspace, type Container, general, now } from "./model";
+import { syncModuleDefinitions } from "./module-definitions";
 export function moveToQuickNotes(w: Workspace, id: string) {
   const n = w.notes.find((n) => n.id === id && !n.trashed);
   if (!n) return;
@@ -6,6 +7,8 @@ export function moveToQuickNotes(w: Workspace, id: string) {
   n.kind = "quick";
   n.updatedAt = now();
   if (n.metadata) delete n.metadata.pinnedFrom;
+  if (n.metadata) delete n.metadata.pinned;
+  syncModuleDefinitions(w, n);
 }
 
 // Derive a stable identity so local and hosted normalization agree before first save.

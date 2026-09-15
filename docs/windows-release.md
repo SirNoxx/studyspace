@@ -13,6 +13,8 @@ npm run desktop:test
 npm run desktop:build
 npm run desktop:smoke
 node desktop/scripts/startup-smoke.cjs
+node desktop/scripts/connection-smoke.cjs
+node desktop/scripts/unified-smoke.cjs
 npm run desktop:test-update
 ```
 
@@ -20,7 +22,7 @@ The `desktop/release` directory contains a full NSIS installer, its differential
 
 The smoke test uses `desktop/.smoke` and a separate port/profile; it must never run against a person's real workspace. It verifies the packaged application, renderer isolation, immediate-close saving, persistence across process restarts, settings validation, and the packaged updater configuration. The update transport test downloads the actual release installer into an isolated cache, verifies its SHA512 digest, and checks that a corrupt manifest is rejected; it never executes the installer. An actual future installer upgrade requires a newer published release; initial-release checks cannot demonstrate a nonexistent future upgrade.
 
-The startup smoke test also checks the bundled loading page before server readiness, simulated slow startup, closing during startup, a visible error when the local port is occupied, and opening the cloud workspace without starting the local server. Timings are recorded in `docs/evidence/desktop-startup.json`. Set `STUDYSPACE_TEST_EXE` to test a packaged executable built in a separate credential-free folder.
+The startup smoke test also checks the bundled loading page before server readiness, simulated slow startup, closing during startup, a visible error when the local port is occupied, and migration of legacy cloud preferences to the unified local workspace. Timings are recorded in `docs/evidence/desktop-startup.json`. The connection smoke checks fresh and legacy installations; the unified smoke exercises real local HTTP proxying against a mocked remote cloud, including incremental AI delivery and secure sign-out. Hosted account authentication still requires separate integration verification. Set `STUDYSPACE_TEST_EXE` for the startup and connection tests to use an executable built in a separate credential-free folder.
 
 ## Publish a new version
 

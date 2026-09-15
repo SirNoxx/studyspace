@@ -196,7 +196,7 @@ export default function AIStudy({ ctx }: { ctx: AppContext }) {
           difficulty,
           consent: ctx.w.settings.aiConsent,
           personality: ctx.w.settings.aiPersonality ?? "",
-          ...(ctx.demo
+          ...(ctx.demo || ctx.collaboration
             ? {
                 localContext: {
                   notes: localNotes.map((n) => ({

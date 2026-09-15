@@ -260,6 +260,25 @@ export default function Markdown({
                   {children}
                 </AttachmentMedia>
               );
+            if (href?.startsWith("#definition:")) {
+              let id = "";
+              try {
+                id = decodeURIComponent(href.slice(12));
+              } catch {}
+              const entry = definitions.find((d) => d.id === id && !d.trashed);
+              return entry ? (
+                <button
+                  type="button"
+                  className="concept"
+                  title={entry.definition}
+                  onClick={() => onDefinition?.(entry.id)}
+                >
+                  {children}
+                </button>
+              ) : (
+                <span title="Definition unavailable">{children}</span>
+              );
+            }
             if (href?.startsWith("#ai-ref:"))
               return (
                 <button

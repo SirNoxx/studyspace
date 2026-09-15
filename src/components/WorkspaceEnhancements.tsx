@@ -14,7 +14,7 @@ import {
   Plus,
   Check,
 } from "lucide-react";
-import type { AppContext } from "./WorkspaceApp";
+import type { AppContext, DialogState } from "./WorkspaceApp";
 import { Modal, Field, SymbolIcon } from "./ui";
 import {
   extraThemes,
@@ -27,6 +27,7 @@ import {
 import { ancestry, localDate, now, type Theme } from "@/lib/model";
 import AttachmentMedia from "./AttachmentMedia";
 import { saveNote } from "@/lib/domain";
+import DefinitionLinkPicker from "./DefinitionLinkPicker";
 
 export function JournalIcon({ size = 20 }: { size?: number }) {
   return (
@@ -273,23 +274,34 @@ export function AttachmentsPanel({
 }
 export function HyperlinkDialog({
   ctx,
+  dialog,
   onClose,
 }: {
   ctx: AppContext;
+  dialog: NonNullable<DialogState>;
   onClose: () => void;
 }) {
-  const selected = ctx.selection || ctx.editor.current?.selection() || "",
+  const selected = String(
+      dialog.value ?? (ctx.selection || ctx.editor.current?.selection() || ""),
+    ),
     match = selected.match(/^\[([^\]]*)\]\(([^)]+)\)$/);
   const [text, setText] = useState(match?.[1] ?? selected),
+    [author, setAuthor] = useState(""),
     [url, setUrl] = useState(match?.[2] ?? ""),
     [kind, setKind] = useState(
-      match?.[2]?.startsWith("#note:") ? "internal" : "external",
+      match?.[2]?.startsWith("#definition:")
+        ? "definition"
+        : match?.[2]?.startsWith("#note:")
+          ? "internal"
+          : "external",
     ),
     [query, setQuery] = useState(""),
     [error, setError] = useState("");
   const [origin] = useState(() => {
-    const note = ctx.active,
-      range = ctx.editor.current?.range();
+    const note = ctx.w.notes.find(
+        (n) => n.id === (dialog.sourceId ?? ctx.active?.id),
+      ),
+      range = dialog.reading ? undefined : ctx.editor.current?.range();
     const index = note?.body.indexOf(selected) ?? -1;
     const exact =
       range && note?.body.slice(range.from, range.to) === selected
@@ -298,141 +310,181 @@ export function HyperlinkDialog({
             note?.body.indexOf(selected, index + selected.length) === -1
           ? { from: index, to: index + selected.length }
           : null;
-    return { noteId: note?.id, revision: note?.revision, range: exact };
+    return {
+      noteId: note?.id,
+      revision: note?.revision,
+      body: note?.body,
+      range: exact,
+    };
   });
   return (
     <Modal
-      title="Insert or edit link"
-      description="Select an existing Markdown link to edit it, or link the selected text."
+      title="Insert or edit link / definition"
+      description="Link your selected text to a web page, a note, or a study definition."
       onClose={onClose}
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          try {
-            if (
-              !ctx.active ||
-              ctx.active.id !== origin.noteId ||
-              ctx.active.revision !== origin.revision ||
-              !origin.range
-            )
-              throw Error("The note changed. Select the passage again.");
-            if (!text.trim()) throw Error("Enter meaningful link text.");
-            let link: string;
-            if (kind === "internal") {
-              const id = url.replace(/^#note:/, "");
-              if (!ctx.w.notes.some((n) => n.id === id && !n.trashed))
-                throw Error("Choose an available note.");
-              link = stableNoteLink(id, text);
-            } else {
-              const u = new URL(url);
-              if (!["https:", "http:", "mailto:"].includes(u.protocol))
-                throw Error("Use an HTTP, HTTPS, or email URL.");
-              link = `[${text.replace(/[\\\[\]]/g, "\\$&")}](${u.toString().replace(/\(/g, "%28").replace(/\)/g, "%29")})`;
+      <Field label="Destination type">
+        <select
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value);
+            setUrl("");
+          }}
+        >
+          <option value="external">External page</option>
+          <option value="internal">Studyspace note</option>
+          <option value="definition">Study definition</option>
+        </select>
+      </Field>
+      {kind === "definition" ? (
+        <DefinitionLinkPicker
+          ctx={ctx}
+          dialog={{
+            type: "hyperlink",
+            sourceId: origin.noteId,
+            value: match?.[1] ?? selected,
+            from: origin.range?.from,
+            to: origin.range?.to,
+            body: origin.body,
+            reading: dialog.reading,
+          }}
+          onClose={onClose}
+        />
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            try {
+              if (
+                !ctx.active ||
+                ctx.active.id !== origin.noteId ||
+                ctx.active.revision !== origin.revision ||
+                !origin.range
+              )
+                throw Error("The note changed. Select the passage again.");
+              if (!text.trim()) throw Error("Enter meaningful link text.");
+              let link: string;
+              if (kind === "internal") {
+                const id = url.replace(/^#note:/, "");
+                if (!ctx.w.notes.some((n) => n.id === id && !n.trashed))
+                  throw Error("Choose an available note.");
+                link = stableNoteLink(id, text);
+              } else {
+                const u = new URL(url);
+                if (!["https:", "http:", "mailto:"].includes(u.protocol))
+                  throw Error("Use an HTTP, HTTPS, or email URL.");
+                link = `[${text.replace(/[\\\[\]]/g, "\\$&")}](${u.toString().replace(/\(/g, "%28").replace(/\)/g, "%29")})`;
+                if (author.trim())
+                  link +=
+                    " — " +
+                    author
+                      .trim()
+                      .replace(/[\\`*_[\]<>]/g, "\\$&")
+                      .replace(/[\r\n]+/g, " ");
+              }
+              const range = origin.range;
+              ctx.mutate((w) => {
+                const n = w.notes.find((n) => n.id === origin.noteId)!;
+                saveNote(
+                  w,
+                  n.id,
+                  origin.revision!,
+                  {
+                    body:
+                      n.body.slice(0, range.from) +
+                      link +
+                      n.body.slice(range.to),
+                  },
+                  "Insert or edit hyperlink",
+                );
+              });
+              onClose();
+            } catch (e) {
+              setError((e as Error).message);
             }
-            const range = origin.range;
-            ctx.mutate((w) => {
-              const n = w.notes.find((n) => n.id === origin.noteId)!;
-              saveNote(
-                w,
-                n.id,
-                origin.revision!,
-                {
-                  body:
-                    n.body.slice(0, range.from) + link + n.body.slice(range.to),
-                },
-                "Insert or edit hyperlink",
-              );
-            });
-            onClose();
-          } catch (e) {
-            setError((e as Error).message);
-          }
-        }}
-      >
-        <Field label="Link text">
-          <input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            autoFocus
-            required
-          />
-        </Field>
-        <Field label="Destination type">
-          <select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value);
-              setUrl("");
-            }}
-          >
-            <option value="external">External page</option>
-            <option value="internal">Studyspace note</option>
-          </select>
-        </Field>
-        {kind === "external" ? (
-          <Field label="URL">
+          }}
+        >
+          <Field label="Title / link text">
             <input
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              autoFocus
               required
             />
           </Field>
-        ) : (
-          <>
-            <Field label="Find a note">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search titles or folders"
-              />
-            </Field>
-            <div className="link-picker">
-              {ctx.w.notes
-                .filter(
-                  (n) =>
-                    !n.trashed &&
-                    (
-                      n.title +
-                      " " +
-                      ancestry(ctx.w, n.containerId)
-                        .map((c) => c.title)
-                        .join("/")
-                    )
-                      .toLowerCase()
-                      .includes(query.toLowerCase()),
-                )
-                .slice(0, 100)
-                .map((n) => (
-                  <button
-                    type="button"
-                    key={n.id}
-                    aria-pressed={url === "#note:" + n.id}
-                    className={url === "#note:" + n.id ? "selected" : ""}
-                    onClick={() => setUrl("#note:" + n.id)}
-                  >
-                    <FileText size={14} />
-                    <span>
-                      {n.title}
-                      <small>
-                        {ancestry(ctx.w, n.containerId)
+          {kind === "external" ? (
+            <>
+              <Field label="Author (optional)">
+                <input
+                  maxLength={300}
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
+                />
+              </Field>
+              <Field label="URL">
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://…"
+                  required
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Find a note">
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search titles or folders"
+                />
+              </Field>
+              <div className="link-picker">
+                {ctx.w.notes
+                  .filter(
+                    (n) =>
+                      !n.trashed &&
+                      (
+                        n.title +
+                        " " +
+                        ancestry(ctx.w, n.containerId)
                           .map((c) => c.title)
-                          .join(" / ")}
-                      </small>
-                    </span>
-                  </button>
-                ))}
-            </div>
-            <small>Showing up to 100 matches; refine your search.</small>
-          </>
-        )}
-        {error && <p role="alert">{error}</p>}
-        <div className="dialog-footer">
-          <button className="primary">Save link</button>
-        </div>
-      </form>
+                          .join("/")
+                      )
+                        .toLowerCase()
+                        .includes(query.toLowerCase()),
+                  )
+                  .slice(0, 100)
+                  .map((n) => (
+                    <button
+                      type="button"
+                      key={n.id}
+                      aria-pressed={url === "#note:" + n.id}
+                      className={url === "#note:" + n.id ? "selected" : ""}
+                      onClick={() => setUrl("#note:" + n.id)}
+                    >
+                      <FileText size={14} />
+                      <span>
+                        {n.title}
+                        <small>
+                          {ancestry(ctx.w, n.containerId)
+                            .map((c) => c.title)
+                            .join(" / ")}
+                        </small>
+                      </span>
+                    </button>
+                  ))}
+              </div>
+              <small>Showing up to 100 matches; refine your search.</small>
+            </>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <div className="dialog-footer">
+            <button className="primary">Save link</button>
+          </div>
+        </form>
+      )}
     </Modal>
   );
 }

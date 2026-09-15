@@ -39,6 +39,7 @@ class CodeWidget extends WidgetType {
     return this.heights.get(this.block.id) ?? -1;
   }
   render(dom: HTMLElement, view: EditorView) {
+    dom.dataset.blockId = this.block.id;
     let root = roots.get(dom);
     if (!root) {
       root = createRoot(dom);

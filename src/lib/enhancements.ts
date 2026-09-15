@@ -1,5 +1,7 @@
 import { attachmentTargets } from "./markdown";
 import { separateQuickNotes } from "./quick-notes";
+import { restoreLegacyPins } from "./pinned-notes";
+import { syncModuleDefinitions } from "./module-definitions";
 import { findAttachment } from "./attachments";
 import {
   type Workspace,
@@ -40,7 +42,8 @@ export const extraThemes = [
   { id: "forest", label: "Forest", colors: ["#eff1e6", "#405e37", "#9bad83"] },
 ] as const;
 export function normalizeWorkspace(w: Workspace) {
-  w = separateQuickNotes(w);
+  w = separateQuickNotes(restoreLegacyPins(w));
+  for (const note of w.notes) if (!note.trashed) syncModuleDefinitions(w, note);
   return {
     ...w,
     settings: {

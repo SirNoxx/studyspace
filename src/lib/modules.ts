@@ -6,6 +6,15 @@ const item = z.object({ text, done: z.boolean() });
 export const moduleSchema = z.discriminatedUnion("kind", [
   z.object({
     version: z.literal(1),
+    kind: z.literal("definition"),
+    term: text,
+    explanation: text,
+    learned: z.boolean(),
+    learnedAt: z.iso.datetime().optional(),
+  }),
+  z.object({ version: z.literal(1), kind: z.literal("uses"), text }),
+  z.object({
+    version: z.literal(1),
     kind: z.literal("calendar"),
     month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
     entries: z.record(z.string(), text),
@@ -96,6 +105,20 @@ export function validCandle(c: Candle) {
 }
 export const moduleTemplates = [
   {
+    id: "definition",
+    title: "Definition",
+    description: "A term and its explanation, side by side. Shortcut: def:",
+    category: "Writing",
+    preview: "definition",
+  },
+  {
+    id: "uses",
+    title: "Use cases",
+    description: "Practical applications in a collapsible box. Shortcut: uses:",
+    category: "Writing",
+    preview: "uses",
+  },
+  {
     id: "calendar",
     title: "Calendar",
     description: "A monthly planner with space for daily notes.",
@@ -159,6 +182,10 @@ export function createModuleData(
   date = new Date(),
 ): ModuleData {
   switch (kind) {
+    case "definition":
+      return { version: 1, kind, term: "", explanation: "", learned: false };
+    case "uses":
+      return { version: 1, kind, text: "" };
     case "calendar":
       return {
         version: 1,
@@ -238,6 +265,10 @@ export function moduleText(code: string): string {
   const d = parseModule(code);
   if (!d) return code;
   switch (d.kind) {
+    case "definition":
+      return `${d.term}: ${d.explanation}${d.learned ? " (marked learned)" : ""}`;
+    case "uses":
+      return `Use cases:\n${d.text}`;
     case "calendar":
       return (
         `${d.month}\n` +

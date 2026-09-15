@@ -105,27 +105,21 @@ async function close() {
   await expect(page.locator("#help")).toBeVisible();
   evidence.scenarios.portConflict = "Visible, closable error screen";
   await close();
+  await new Promise((resolve) => blocker.close(resolve));
+  blocker = null;
 
   page = await launch("cloud", 2000, {
     lastWorkspace: "cloud",
     cloudOrigin: "https://studyspace.example.com",
     automaticUpdates: false,
   });
-  await page.route("https://studyspace.example.com/**", (route) =>
-    route.fulfill({
-      contentType: "text/html",
-      body: "<h1>Cloud workspace fixture</h1><script>window.__studyspaceFlushForClose=async()=>true</script>",
-    }),
-  );
-  await page.waitForURL("https://studyspace.example.com/w", { timeout: 60000 });
-  await expect(page.getByRole("heading")).toHaveText("Cloud workspace fixture");
+  await page.waitForURL("http://127.0.0.1:47832/demo**", { timeout: 60000 });
+  await expect(page.getByText("Make room for your ideas.")).toBeVisible();
   const cloud = await app.evaluate(() => global.__studyspaceStartupTimings);
-  assert.equal(cloud.localServerReadyMs, undefined);
+  assert.equal(typeof cloud.localServerReadyMs, "number");
   evidence.scenarios.cloud =
-    "Opened cloud with local port occupied; no local server startup";
+    "Legacy cloud preference opens local notes with cloud connection settings retained";
   await close();
-  await new Promise((resolve) => blocker.close(resolve));
-  blocker = null;
   await fs.writeFile(
     path.join(root, "docs/evidence/desktop-startup.json"),
     JSON.stringify(evidence, null, 2) + "\n",

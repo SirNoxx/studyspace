@@ -59,6 +59,7 @@ export interface Note {
   linkMap?: Record<string, ID>;
 }
 export interface Definition {
+  moduleBlockId?: string;
   noteId?: ID;
   id: ID;
   term: string;
@@ -193,6 +194,7 @@ export interface LineageNode {
   author: string;
 }
 export interface LocalPublication {
+  cloud?: boolean;
   id: ID;
   containerId: ID;
   current: Snapshot;
@@ -261,6 +263,10 @@ export interface AIRecord {
   evidence?: { id: string; text: string; title?: string; locator?: string }[];
 }
 export interface Settings {
+  learningPaths?: import("./learning").LearningPath[];
+  activeLearningPath?: string;
+  learningTopics?: import("./learning-catalog").LearningTopic[];
+  plannerTasks?: import("./planner").PlannerTask[];
   journalTemplates?: JournalTemplate[];
   workspaceName?: string;
   ribbonCompact?: boolean;
@@ -419,7 +425,7 @@ export const general = (w: Workspace) =>
 export function contextDefinitions(w: Workspace, containerId: ID) {
   const scopes = ancestry(w, containerId)
     .reverse()
-    .filter((c) => c.kind !== "folder");
+    .filter((c) => c.kind !== "folder" || w.definitions.some(d=>d.subjectIds.includes(c.id)));
   const seen = new Set<string>();
   return scopes.flatMap((c) =>
     w.definitions
