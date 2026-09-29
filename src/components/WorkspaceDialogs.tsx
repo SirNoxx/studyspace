@@ -1,4 +1,5 @@
 "use client";
+import {choosePDFImport} from "./PDFImportPrompt";
 import { quickNotesContainer } from "@/lib/quick-notes";
 import {
   definitionCollections as availableDefinitionCollections,
@@ -1838,7 +1839,7 @@ export default function Dialogs({
         title={
           report ? "Your notes have arrived" : "Bring your knowledge with you"
         }
-        description="Import Markdown, Word, text and text-based PDFs. Review converted notes before adding them; original documents are retained as attachments."
+        description="Import Markdown, Word, text and PDFs. Keep original PDF pages in a PDFs module, or choose conversion to Markdown text."
         onClose={onClose}
         wide
       >
@@ -1862,7 +1863,7 @@ export default function Dialogs({
                   setError("");
                   try {
                     setPlan(
-                      await prepareImport(Array.from(e.target.files ?? [])),
+                      await prepareImport(Array.from(e.target.files ?? []), {choosePDFMode:names=>choosePDFImport(names,ctx.account)}),
                     );
                   } catch (e) {
                     setError((e as Error).message);
@@ -1881,7 +1882,7 @@ export default function Dialogs({
                 onChange={async (e) => {
                   try {
                     setPlan(
-                      await prepareImport(Array.from(e.target.files ?? [])),
+                      await prepareImport(Array.from(e.target.files ?? []), {choosePDFMode:names=>choosePDFImport(names,ctx.account)}),
                     );
                   } catch (e) {
                     setError((e as Error).message);
@@ -1925,7 +1926,7 @@ export default function Dialogs({
                   <strong>
                     {plan.files.filter((f) => f.kind === "note").length}
                   </strong>{" "}
-                  Markdown notes
+                  notes / PDF modules
                 </span>
                 <span>
                   <strong>

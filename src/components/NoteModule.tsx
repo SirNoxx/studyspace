@@ -22,6 +22,8 @@ import TableModule from "./TableModule";
 import FormattedList from "./FormattedList";
 import dynamic from "next/dynamic";
 const SpreadsheetModule = dynamic(() => import("./SpreadsheetModule"), { ssr: false, loading: () => <p role="status">Loading spreadsheet editor…</p> });
+const PDFModule = dynamic(() => import("./PDFModule"), {ssr:false,loading:()=> <p role="status">Loading PDF viewer…</p>});
+import type {PDFAssetContext} from "@/lib/pdf-assets";
 import {
   parseModule,
   chartCandles,
@@ -345,11 +347,13 @@ export default function NoteModule({
   onChange,
   onAction,
   readOnly = false,
+  pdfAssets,
 }: {
   block: StudyCodeBlock;
   onChange?: (patch: Partial<StudyCodeBlock>) => void;
   onAction?: (action: BlockAction) => void;
   readOnly?: boolean;
+  pdfAssets?: PDFAssetContext;
 }) {
   const data = useMemo(() => parseModule(block.code), [block.code]);
   const moduleRoot = useRef<HTMLElement>(null);
@@ -386,6 +390,9 @@ export default function NoteModule({
     );
   let content: React.ReactNode;
   switch (data.kind) {
+    case "pdf":
+      content = <PDFModule data={data} readOnly={readOnly} onChange={update} assets={pdfAssets} blockId={block.id} />;
+      break;
     case "spreadsheet":
       content = <SpreadsheetModule data={data} title={block.title ?? "Spreadsheet"} readOnly={readOnly} onChange={update} />;
       break;

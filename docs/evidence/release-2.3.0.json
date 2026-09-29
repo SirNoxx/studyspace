@@ -1,0 +1,49 @@
+{
+  "version": "2.3.0",
+  "verifiedAt": "2026-09-29T20:42:30.093Z",
+  "platform": "Windows x64",
+  "unitTests": {
+    "files": 42,
+    "tests": 225
+  },
+  "desktopTests": 17,
+  "browserTests": 3,
+  "productionBuild": "passed including TypeScript",
+  "packagedChecks": [
+    "PDF rendering with external network blocked",
+    "original page colors and locally bundled fonts/worker",
+    "direct module import preserves styling without a format prompt",
+    "annotations persist after reload",
+    "rotated page annotation exported and reimported; original geometry retained",
+    "current / total page counter follows dominant visible page",
+    "startup, renderer isolation and settings validation",
+    "immediate-close saving and restart persistence",
+    "updater download, correct checksum and corrupt checksum rejection"
+  ],
+  "bundledEnvironmentFiles": [],
+  "installerExecuted": false,
+  "artifacts": [
+    {
+      "name": "Studyspace-Setup-2.3.0-x64.exe",
+      "bytes": 162335336,
+      "sha256": "cb70b2d2802593bd18ba934428446b82998185848c0799d80908f0e4ccc674ed"
+    },
+    {
+      "name": "Studyspace-Setup-2.3.0-x64.exe.blockmap",
+      "bytes": 169403,
+      "sha256": "de25b3ba75676da04d050189e862c1e7ddf8cc87b8877d37ca1338e29e67a825"
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 357,
+      "sha256": "4adc2d6e9e8fe7c003f02000385be410a972940f46904b7bcc14258b89685423"
+    }
+  ],
+  "limits": [
+    "PDF text corrections are visual overlays; original searchable text remains underneath",
+    "No OCR, paragraph reflow, native PDF content replacement or redaction",
+    "Unsigned Windows installer",
+    "In-place installation upgrade not executed",
+    "Hosted services not deployed"
+  ]
+}

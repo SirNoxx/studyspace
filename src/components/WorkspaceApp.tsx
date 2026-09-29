@@ -1,4 +1,6 @@
 "use client";
+import PDFImportPrompt, {choosePDFImport} from "./PDFImportPrompt";
+import {pdfModule} from "@/lib/pdf-module";
 import { placeAttachment, type AttachmentPlacement } from "@/lib/attachment-placement";
 import { workbookReferences } from '@/lib/spreadsheets/references';
 import { includeLinkedDefinitions } from "@/lib/markdown";
@@ -1204,6 +1206,10 @@ export default function WorkspaceApp({
       toast("Open a note before adding attachments.");
       return;
     }
+    const pdfFiles=files.filter(file=>/\.pdf$/i.test(file.name));
+    // Importing into an existing PDF module already expresses the desired format.
+    const pdfMode=pdfFiles.length ? placement?.replaceBlockId ? "module" : await choosePDFImport(pdfFiles.map(file=>file.name),account) : null;
+    if(pdfFiles.length && !pdfMode)return;
     const insert = (body: string, markdown: string) => {
       const result = placeAttachment(body, placement, markdown);
       placement = result.placement;
@@ -1212,10 +1218,17 @@ export default function WorkspaceApp({
     const { sha256 } = await import("@/lib/transfer");
     for (const file of files) {
       try {
+        const isPDF=/\.pdf$/i.test(file.name);
+        let pdfText="";
         if (file.size > 50 * 1024 * 1024)
           throw new Error(file.name + " exceeds 50 MB.");
         if (!/\.(pdf|png|jpe?g|webp|gif|mp3|wav|mp4|md|txt)$/i.test(file.name))
           throw new Error("Unsupported attachment type.");
+        if(isPDF && pdfMode==="markdown") {
+          const {documentToMarkdown}=await import("@/lib/document-conversion");
+          pdfText=(await documentToMarkdown(new Uint8Array(await file.arrayBuffer()),"pdf")).markdown;
+        }
+        const pdfBody=(assetId:string)=>pdfMode==="module" ? pdfModule("attachment:"+assetId,file.name) : pdfText+`\n\n[Original PDF](attachment:${assetId})`;
         toast("Uploading " + file.name + "…");
         const id = uid(),
           hash = await sha256(new Uint8Array(await file.arrayBuffer()));
@@ -1236,7 +1249,7 @@ export default function WorkspaceApp({
               n.id,
               note.revision,
               {
-                body: insert(note.body, `${file.type.startsWith("image/") ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "_")}](attachment:${asset.id})`),
+                body: insert(note.body, isPDF ? pdfBody(asset.id) : `${file.type.startsWith("image/") ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "_")}](attachment:${asset.id})`),
               },
               "Attachment",
             );
@@ -1254,7 +1267,7 @@ export default function WorkspaceApp({
           s.attachments.push({
             id,
             filename: file.name,
-            mime: file.type,
+            mime: isPDF ? "application/pdf" : file.type,
             size: file.size,
             hash,
             key,
@@ -1267,7 +1280,7 @@ export default function WorkspaceApp({
             n.id,
             note.revision,
             {
-              body: insert(note.body, `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`.trim()),
+              body: insert(note.body, isPDF ? pdfBody(id) : `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`.trim()),
             },
             "Attachment",
           );
@@ -3814,6 +3827,7 @@ export default function WorkspaceApp({
           </IconButton>
         </div>
       )}
+      <PDFImportPrompt scope={account} />
       <button
         className="mobile-create"
         aria-label="Quick note"

@@ -1,6 +1,6 @@
 {
   "name": "studyspace",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -67,6 +67,7 @@
     "mermaid": "latest",
     "next": "latest",
     "nspell": "2.1.5",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "latest",
     "pyodide": "314.0.6",
     "react": "latest",

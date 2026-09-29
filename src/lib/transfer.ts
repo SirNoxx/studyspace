@@ -19,6 +19,10 @@ import { learningSettingsSchema } from "./learning-schema";
 import { syncModuleDefinitions } from "./module-definitions";
 import { workbookReferences } from "./spreadsheets/references";
 import type { WorkbookSnapshot } from "./spreadsheets/model";
+import {pdfModule,type PDFImportMode} from "./pdf-module";
+import {pdfModuleSchema} from "./pdf-module";
+import {studyCodeBlocks,codeFence} from "./code-blocks";
+import {findAttachment} from "./attachments";
 export function assetMime(path: string) {
   const ext = path.split(".").at(-1)?.toLowerCase();
   return (
@@ -128,7 +132,7 @@ function inspectZip(bytes: Uint8Array) {
   }
   return total;
 }
-export async function prepareImport(files: File[]): Promise<ImportPlan> {
+export async function prepareImport(files: File[], options: {pdfMode?:PDFImportMode;choosePDFMode?:(names:string[])=>Promise<PDFImportMode|null>} = {}): Promise<ImportPlan> {
   const unpacked: { path: string; bytes: Uint8Array }[] = [];
   let total = 0;
   for (const file of files) {
@@ -145,6 +149,10 @@ export async function prepareImport(files: File[]): Promise<ImportPlan> {
   }
   const plan: ImportPlan = { files: [], warnings: [], totalBytes: 0 };
   const originals = [...unpacked];
+  const backup = unpacked.some(item=>/(^|\/)studyspace-manifest\.json$/i.test(item.path));
+  const pdfs = originals.filter(item=>/\.pdf$/i.test(item.path));
+  const pdfMode = !backup && pdfs.length && options.choosePDFMode ? await options.choosePDFMode(pdfs.map(p=>p.path)) : options.pdfMode ?? "module";
+  if(pdfMode===null)throw new DomainError("Import cancelled.");
   if (
     unpacked.length > importLimits.entries ||
     unpacked.reduce((sum, item) => sum + item.bytes.length, 0) >
@@ -156,6 +164,13 @@ export async function prepareImport(files: File[]): Promise<ImportPlan> {
   for (const item of originals) {
     const ext = item.path.split(".").at(-1)?.toLowerCase();
     if (!ext || !["docx", "pdf", "txt", "doc"].includes(ext)) continue;
+    if(backup)continue;
+    // A cloud import worker may receive a plan already converted by the browser.
+    if(originals.some(existing=>existing.path.toLowerCase()===(item.path+".md").toLowerCase()))continue;
+    if(ext==="pdf" && pdfMode==="module") {
+      unpacked.push({path:item.path+".md",bytes:strToU8(pdfModule(encodeURIComponent(item.path.split("/").at(-1)!),item.path.split("/").at(-1)!))});
+      continue;
+    }
     try {
       if (ext === "docx") inspectZip(item.bytes);
       const { documentToMarkdown } = await import("./document-conversion");
@@ -281,6 +296,12 @@ export function commitImport(
       linkMap: {},
     });
     importedNotes.push(n);
+    for(const block of studyCodeBlocks(n.body).filter(b=>b.language==="module").reverse()) {
+      try {
+        const pdf=pdfModuleSchema.safeParse(JSON.parse(block.code));
+        if(pdf.success) {const asset=findAttachment(w.attachments,pdf.data.source,n.originalPath);if(asset)n.body=n.body.slice(0,block.from)+codeFence({...block,code:JSON.stringify({...pdf.data,source:"attachment:"+asset.id})})+n.body.slice(block.to);}
+      }catch{/* Preserve invalid module source for recovery. */}
+    }
     const frontmatter = n.body.match(
       /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/,
     )?.[1];

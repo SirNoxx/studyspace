@@ -9,6 +9,7 @@ const root = process.cwd(),
   standalone = resolve(root, ".next/standalone");
 if (command === "dev" || command === "build") await import("./prepare-code-runtimes.mjs");
 if (command === "dev" || command === "build") await import("./prepare-spelling.mjs");
+if (command === "dev" || command === "build") await import("./prepare-pdf.mjs");
 async function copyAssets() {
   await cp(resolve(root, "public"), resolve(standalone, "public"), {
     recursive: true,

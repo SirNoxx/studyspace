@@ -1,8 +1,10 @@
 import { diffChars } from "diff";
+import {studyCodeBlocks} from "./code-blocks";
 
 export interface AttachmentPlacement {
   body: string;
   position: number;
+  replaceBlockId?: string;
 }
 
 /** Keep the original paste point while uploads finish and the note is edited. */
@@ -12,7 +14,14 @@ export function placeAttachment(
   markdown: string,
 ) {
   let position = current.length;
-  if (placement) {
+  let end: number | undefined;
+  if(placement?.replaceBlockId) {
+    const original=studyCodeBlocks(placement.body).find(b=>b.id===placement.replaceBlockId);
+    const block=studyCodeBlocks(current).find(b=>b.id===placement.replaceBlockId);
+    if(!original || !block || placement.body.slice(original.from,original.to)!==current.slice(block.from,block.to))
+      throw Error("The PDF module changed during import. Please import it again.");
+    position=block.from;end=block.to;
+  } else if (placement) {
     const changes = diffChars(placement.body, current, { timeout: 100 });
     if (!changes)
       throw Error(
@@ -48,6 +57,6 @@ export function placeAttachment(
     (position > 0 && current[position - 1] !== "\n" ? "\n" : "") +
     markdown +
     "\n";
-  const body = current.slice(0, position) + insert + current.slice(position);
+  const body = current.slice(0, position) + insert + current.slice(end ?? position);
   return { body, placement: { body, position: position + insert.length } };
 }

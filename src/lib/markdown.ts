@@ -5,6 +5,8 @@ import remarkMath from "remark-math";
 import { visit } from "unist-util-visit";
 import type { Definition } from "./model";
 import { normalizeTaskLists } from "./task-lists";
+import {pdfModuleSchema} from "./pdf-module";
+import {studyCodeBlocks} from "./code-blocks";
 import {publicSpreadsheetPreviews} from './spreadsheets/references';
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 /** Accept the compact task shorthand in reading views as well as the editor. */
@@ -52,6 +54,9 @@ export function attachmentTargets(markdown: string): string[] {
     markdown.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
   );
   const found = new Set<string>();
+  for(const block of studyCodeBlocks(markdown).filter(b=>b.language==="module")) {
+    try {const pdf=pdfModuleSchema.safeParse(JSON.parse(block.code));if(pdf.success&&pdf.data.source)found.add(pdf.data.source);}catch{/* Invalid module remains source text. */}
+  }
   const definitions = new Map<string, string>();
   visit(tree, (node: any) => {
     if (node.type === "definition") definitions.set(node.identifier, node.url);
@@ -224,6 +229,9 @@ export function publicMarkdown(
   ids: Set<string>,
   assets: Set<string> = new Set(),
 ) {
+    for(const block of studyCodeBlocks(body).filter(b=>b.language==="module").reverse()) {
+      try {const pdf=pdfModuleSchema.safeParse(JSON.parse(block.code));if(pdf.success&&(!pdf.data.source.startsWith("attachment:")||!assets.has(pdf.data.source.slice(11))))body=body.slice(0,block.from)+"[PDF attachment not included in this publication]"+body.slice(block.to);}catch{/* Invalid modules are preserved. */}
+    }
     let safe = publicSpreadsheetPreviews(body)
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
     .replace(/%%[\s\S]*?%%/g, "")

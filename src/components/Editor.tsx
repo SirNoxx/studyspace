@@ -104,7 +104,7 @@ export default function Editor({
   onDefinition: (id: string) => void;
   onAttach: (files: File[], placement?: AttachmentPlacement) => void;
   handle: React.MutableRefObject<EditorHandle | null>;
-  notes: { id: string; title: string }[];
+  notes: { id: string; title: string; originalPath?:string }[];
   attachments: Attachment[];
   demo: boolean;
   onChat?: (text: string) => void;
@@ -182,6 +182,13 @@ export default function Editor({
     embeddedBlocks.current = codeBlockExtension(
       (text) => callbacks.current.onChat?.(text),
       (action, block) => callbacks.current.onBlockAction?.(action, block),
+      () => ({attachments:attachmentsRef.current,demo,fromPath:notesRef.current.find(n=>n.id===active.current)?.originalPath,
+        onImport:(file,blockId)=>{
+          const editor=view.current;
+          if(!editor || editor.state.readOnly)return;
+          const block=studyCodeBlocks(editor.state.doc.toString()).find(b=>b.id===blockId);
+          if(block)callbacks.current.onAttach([file],{body:editor.state.doc.toString(),position:block.from,replaceBlockId:block.id});
+        }}),
     );
   const modeRef = useRef(mode);
   modeRef.current = mode;

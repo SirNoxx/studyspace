@@ -38,6 +38,7 @@ test("Word and PDF imports create editable Markdown, and a note exports as Word"
   const pdfPage=await browser.newPage();await pdfPage.setContent("<h1>PDF conversion fixture</h1><p>Retrieval practice strengthens memory.</p>");const pdf=await pdfPage.pdf();await pdfPage.close();
   await page.goto("/demo?sample=1");await page.getByRole("button",{name:"Import notes",exact:true}).click();
   await page.locator("input[type=file][accept]").setInputFiles([{name:"Word-study.docx",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",buffer:word},{name:"PDF-study.pdf",mimeType:"application/pdf",buffer:pdf}]);
+  await page.getByRole("button",{name:"Convert to Markdown text",exact:false}).click();
   await expect(page.getByText("Word-study.docx.md",{exact:true})).toBeVisible();
   await expect(page.getByText("PDF-study.pdf.md",{exact:true})).toBeVisible();
   await page.getByRole("button",{name:"Import notes",exact:true}).last().click();

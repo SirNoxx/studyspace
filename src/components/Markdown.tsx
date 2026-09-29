@@ -402,6 +402,7 @@ export default function Markdown({
               return (
                 <NoteModule
                   readOnly
+                  pdfAssets={{attachments,demo,fromPath,publicBase:publicAssetBase}}
                   block={{
                     id: "preview",
                     language: "module",

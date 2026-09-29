@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { codeFence } from "./code-blocks";
+import { pdfModuleSchema } from "./pdf-module";
 
 const text = z.string().max(20000);
 const item = z.object({ text, done: z.boolean() });
 export const moduleSchema = z.discriminatedUnion("kind", [
+  pdfModuleSchema,
   z.object({
     version: z.literal(1),
     kind: z.literal("spreadsheet"),
@@ -123,6 +125,7 @@ export function validCandle(c: Candle) {
   );
 }
 export const moduleTemplates = [
+  { id: "pdf", title: "PDFs", description: "Original PDF pages, annotations, text corrections, saving and printing.", category: "Writing", preview: "paper" },
   {
     id: "spreadsheet",
     title: "Spreadsheet",
@@ -209,6 +212,7 @@ export function createModuleData(
   date = new Date(),
 ): ModuleData {
   switch (kind) {
+    case "pdf": return {version:1,kind,source:"",annotations:[]};
     case "spreadsheet":
       return { version: 1, kind, workbookId: crypto.randomUUID() };
     case "definition":
@@ -294,6 +298,7 @@ export function moduleText(code: string): string {
   const d = parseModule(code);
   if (!d) return code;
   switch (d.kind) {
+    case "pdf": return `PDF document\n${d.annotations.filter(a=>a.text).map(a=>`Page ${a.page}: ${a.text}`).join("\n")}`;
     case "spreadsheet":
       return d.preview
         ? `${d.preview.sheet} (${d.preview.range})\n${d.preview.rows.map((row) => row.join(" | ")).join("\n")}`
