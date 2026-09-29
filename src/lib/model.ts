@@ -426,6 +426,8 @@ export function contextDefinitions(w: Workspace, containerId: ID) {
   const scopes = ancestry(w, containerId)
     .reverse()
     .filter((c) => c.kind !== "folder" || w.definitions.some(d=>d.subjectIds.includes(c.id)));
+  // Unfiled notes use the General collection's dictionary, while retaining legacy entries.
+  if (scopes.some(c => c.system === "quick") && general(w)) scopes.push(general(w));
   const seen = new Set<string>();
   return scopes.flatMap((c) =>
     w.definitions

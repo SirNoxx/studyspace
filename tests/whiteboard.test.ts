@@ -8,6 +8,20 @@ import {
   wrapBoardText,
   type BoardStroke,
 } from "../src/lib/whiteboard";
+it("preserves portrait framing and opens legacy drawings in desktop mode", () => {
+  expect(parseBoard(JSON.stringify(emptyBoard()))?.viewMode).toBeUndefined();
+  expect(
+    parseBoard(JSON.stringify({ ...emptyBoard(), viewMode: "mobile" }))
+      ?.viewMode,
+  ).toBe("mobile");
+  expect(
+    parseBoard(JSON.stringify({ ...emptyBoard(), viewMode: "desktop" }))
+      ?.viewMode,
+  ).toBe("desktop");
+  expect(
+    parseBoard(JSON.stringify({ ...emptyBoard(), viewMode: "invalid" })),
+  ).toBeNull();
+});
 it("round trips code titles without allowing title text to break a Markdown fence", () => {
   const block = {
     id: "cell",

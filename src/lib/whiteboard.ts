@@ -29,6 +29,7 @@ export interface BoardStroke {
 }
 export interface BoardData {
   version: 1;
+  viewMode?: "desktop" | "mobile";
   background: "blank" | "dots" | "grid" | "ruled";
   strokes: BoardStroke[];
 }
@@ -42,6 +43,8 @@ export function parseBoard(code: string): BoardData | null {
     const value = JSON.parse(code);
     if (
       value.version !== 1 ||
+      (value.viewMode !== undefined &&
+        !["desktop", "mobile"].includes(value.viewMode)) ||
       !["blank", "dots", "grid", "ruled"].includes(value.background) ||
       !Array.isArray(value.strokes) ||
       value.strokes.length > 1000

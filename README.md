@@ -94,3 +94,7 @@ docker compose --env-file .env.local up --build -d
 Docker and a hosted web deployment were **not run in this environment**. The connected Supabase database has been migrated and SQL-verified; the web app and worker still need configuration and hosting. Before launch, complete the external checks and remaining acceptance gaps in the runbook. HTTPS, Auth email, allowed origins, quotas, backup retention, moderation staffing, and a monitored worker are operator responsibilities. No code has been pushed to an external repository by this database update.
 
 Further documentation: [user guide](docs/user-guide.md), [architecture](docs/architecture.md), [import/export compatibility](docs/compatibility.md), [shortcuts](docs/shortcuts.md), [operator runbook](docs/operator-runbook.md), [acceptance evidence](docs/acceptance.md).
+
+### Spreadsheet modules
+
+Add a spreadsheet from **Modules → Spreadsheet**. Local editing and XLSX/CSV/TSV conversion require no external API or paid license. See [implementation, verification and shared rollout instructions](docs/spreadsheet-module-implementation.md).

@@ -1,0 +1,7 @@
+Studyspace Sheets uses Univer 0.25.1 (Apache-2.0), ExcelJS 4.4.0 (MIT), and RxJS 7.8.2 (Apache-2.0).
+Copyrights and license terms are reproduced in the accompanying license files.
+Univer: Copyright 2023-present DreamNum Co., Ltd. https://github.com/dream-num/univer
+ExcelJS: https://github.com/exceljs/exceljs
+RxJS: https://github.com/ReactiveX/rxjs
+No Univer Pro import/export, outline or collaboration package is included.
+Studyspace's conversion, grouping, accessibility controls and collaboration adapter are separate application code.

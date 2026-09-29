@@ -87,13 +87,13 @@ class CloudBridge {
   const remotePath=u.pathname==="/api/device/cloud-workspace"?"/api/workspace":u.pathname.replace(/^\/api\/device\/cloud-assets\//,"/api/attachments/");
   const headers={Origin:origin};
   if(token)headers.Authorization="Bearer "+token;
-  for(const name of ["content-type","x-studyspace-compressed"])if(req.headers[name])headers[name]=req.headers[name];
+  for(const name of ["content-type","x-studyspace-compressed","x-studyspace-ai-client"])if(req.headers[name])headers[name]=req.headers[name];
   const abort=new AbortController();res.on("close",()=>{if(!res.writableEnded)abort.abort();});
   const response=await fetch(origin+remotePath+u.search,{method:req.method,headers,body,signal:abort.signal,redirect:"manual"});
   // Prevent the local Next server from buffering streamed AI output in its
   // compression layer. Preserve incremental delivery through the proxy.
   const output={"Cache-Control":"private, no-store, no-transform"};
-  for(const name of ["content-type","content-disposition"])if(response.headers.has(name))output[name]=response.headers.get(name);
+  for(const name of ["content-type","content-disposition","retry-after","x-ai-remaining","x-ai-daily-limit","x-ai-reset"])if(response.headers.has(name))output[name]=response.headers.get(name);
   res.writeHead(response.status,output);
   if(response.body)await pipeline(Readable.fromWeb(response.body),res);else res.end();
  }

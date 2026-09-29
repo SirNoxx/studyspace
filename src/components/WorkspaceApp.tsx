@@ -1,4 +1,6 @@
 "use client";
+import { placeAttachment, type AttachmentPlacement } from "@/lib/attachment-placement";
+import { workbookReferences } from '@/lib/spreadsheets/references';
 import { includeLinkedDefinitions } from "@/lib/markdown";
 import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
 import {
@@ -119,6 +121,7 @@ import { IconButton, SymbolIcon, Menu, Empty, Modal } from "./ui";
 import Markdown from "./Markdown";
 import type { EditorHandle } from "./Editor";
 import TextContextMenu from "./TextContextMenu";
+import type { ModuleTextAction } from "@/lib/module-text";
 import Dialogs from "./WorkspaceDialogs";
 import {
   JournalIcon,
@@ -191,7 +194,7 @@ export interface AppContext {
   signOut: () => Promise<void>;
   selection: string;
   editor: React.MutableRefObject<EditorHandle | null>;
-  attach: (files: File[], noteId?: string) => Promise<void>;
+  attach: (files: File[], noteId?: string, placement?: AttachmentPlacement) => Promise<void>;
   importYoutube?: (url: string, noteId: string, retry?: boolean) => void;
   pickStudyFolder?: (choose: (id: string) => void, cancel?: () => void) => void;
   exportData: (options?: {
@@ -1131,7 +1134,7 @@ export default function WorkspaceApp({
   ) => {
     if (!wRef.current) return;
     try {
-      if (!demo && !collaboration && !options.noteId) {
+      if (!demo && !collaboration && !options.noteId && !wRef.current.notes.some(n => workbookReferences(n.body).length)) {
         const r = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1154,6 +1157,11 @@ export default function WorkspaceApp({
       });
       const bytes = await exportWorkspace(wRef.current, {
         ...options,
+        loadWorkbook: async (id) => {
+          if(collaboration){const {readSharedWorkbook}=await import('@/lib/spreadsheets/shared-store');const note=wRef.current!.notes.find(n=>workbookReferences(n.body).some(ref=>ref.data.workbookId===id));if(!note)return undefined;return (await readSharedWorkbook({scope:account,collection:collaboration.id,note:note.id},id)).record?.snapshot;}
+          const { loadWorkbook } = await import("@/lib/spreadsheets/store");
+          return (await loadWorkbook(account, id))?.snapshot;
+        },
         onProgress: (value, message) =>
           setExportProgress({ value, message, busy: true }),
         loadAsset: async (a) => {
@@ -1190,12 +1198,17 @@ export default function WorkspaceApp({
       toast((e as Error).message);
     }
   };
-  const attach = async (files: File[], noteId = activeId) => {
+  const attach = async (files: File[], noteId = activeId, placement?: AttachmentPlacement) => {
     const n = wRef.current?.notes.find((n) => n.id === noteId);
     if (!n) {
       toast("Open a note before adding attachments.");
       return;
     }
+    const insert = (body: string, markdown: string) => {
+      const result = placeAttachment(body, placement, markdown);
+      placement = result.placement;
+      return result.body;
+    };
     const { sha256 } = await import("@/lib/transfer");
     for (const file of files) {
       try {
@@ -1216,15 +1229,14 @@ export default function WorkspaceApp({
           const asset = await collaboration.upload(file);
           mutate((s) => {
             s.attachments.push(asset);
-            const note = s.notes.find((x) => x.id === n.id)!;
+            const note = s.notes.find((x) => x.id === n.id);
+            if (!note || note.trashed) throw Error("The original note is no longer available.");
             saveNote(
               s,
               n.id,
               note.revision,
               {
-                body:
-                  note.body +
-                  `\n${file.type.startsWith("image/") ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "_")}](attachment:${asset.id})\n`,
+                body: insert(note.body, `${file.type.startsWith("image/") ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "_")}](attachment:${asset.id})`),
               },
               "Attachment",
             );
@@ -1248,15 +1260,14 @@ export default function WorkspaceApp({
             key,
             createdAt: now(),
           });
-          const note = s.notes.find((x) => x.id === n.id)!;
+          const note = s.notes.find((x) => x.id === n.id);
+            if (!note || note.trashed) throw Error("The original note is no longer available.");
           saveNote(
             s,
             n.id,
             note.revision,
             {
-              body:
-                note.body +
-                `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`,
+              body: insert(note.body, `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`.trim()),
             },
             "Attachment",
           );
@@ -1267,6 +1278,31 @@ export default function WorkspaceApp({
     }
   };
   const importYoutube = useTranscriptImport(() => wRef.current, mutate, toast);
+  useEffect(() => {
+    if (!w) return;
+    const action = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if (!!target.closest(".shared-workspace-overlay") !== !!collaboration || collaboration?.readOnly) return;
+      const noteId = target.closest<HTMLElement>("[data-note-id]")?.dataset.noteId;
+      if (!noteId || !w.notes.some(n => n.id === noteId && !n.trashed)) return;
+      if (event.type === "studyspace:module-definition") {
+        const detail = (event as CustomEvent<{blockId: string; code: string}>).detail;
+        setDialog({type: "module-definition", sourceId: noteId, blockId: detail.blockId, code: detail.code});
+        return;
+      }
+      const detail = (event as CustomEvent<ModuleTextAction>).detail;
+      if (detail.action === "chat") { ctx.openChat(detail.text, noteId); return; }
+      setDialog({ type: detail.action, value: detail.action === "review-card" ? "" : detail.text,
+        answer: detail.action === "review-card" ? detail.text : undefined, passage: detail.text,
+        sourceId: noteId, moduleReplace: detail.replace });
+    };
+    window.addEventListener("studyspace:module-text-action", action);
+    window.addEventListener("studyspace:module-definition", action);
+    return () => {
+      window.removeEventListener("studyspace:module-text-action", action);
+      window.removeEventListener("studyspace:module-definition", action);
+    };
+  }, [w, collaboration, activePane]);
   if (!w)
     return (
       <div className="loading-screen">
@@ -2026,6 +2062,9 @@ export default function WorkspaceApp({
                 </span>
               )}
               {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
+              {n.metadata?.pinned === true && (
+                <Pin size={13} className="note-pin" role="img" aria-label="Pinned note" />
+              )}
             </div>
           );
         })}
@@ -2328,7 +2367,7 @@ export default function WorkspaceApp({
                   void connectAccount().catch((e) => toast(e.message))
                 }
               >
-                Connect account for AI & community
+                Connect account for community
               </button>
             )}
             {cloudAccount && demo && !w.notes.length && (
@@ -2417,6 +2456,7 @@ export default function WorkspaceApp({
                           >
                             <FileText size={15} />
                             <span>{n.title || "Untitled"}</span>
+                            <Pin size={13} className="note-pin" role="img" aria-label="Pinned note" />
                           </button>
                           <Menu
                             trigger={
@@ -3061,15 +3101,23 @@ export default function WorkspaceApp({
                       + Add tag
                     </button>
                   </div>
-                  <div className="writing-area">
+                  <div className="writing-area" data-workbook-scope={account} data-workbook-collection={collaboration?.id} data-note-id={active.id}>
                     {mode === "reading" && (
                       <Markdown
+                        key={active.id}
+                        collapsibleHeadings
                         attachments={w.attachments}
                         notes={w.notes.filter((n) => !n.trashed)}
                         demo={demo}
                         fromPath={active.originalPath ?? active.title + ".md"}
                         density={w.settings.dictionaryDensity}
                         onAttachment={(id) => setDialog({ type: "pdf", id })}
+                        onBodyChange={collaboration?.readOnly ? undefined : (body, previous) => mutate((s) => {
+                          const n = s.notes.find((n) => n.id === active.id);
+                          // Reading can omit the note's leading title. Retain that prefix and reject stale edits.
+                          if (n?.body === active.body && n.body.endsWith(previous))
+                            saveNote(s, n.id, n.revision, { body: n.body.slice(0, n.body.length - previous.length) + body });
+                        })}
                         body={
                           active.body.startsWith("# " + active.title + "\n")
                             ? active.body
@@ -3151,7 +3199,7 @@ export default function WorkspaceApp({
                         onDefinition={(id) =>
                           setDialog({ type: "definition-detail", id })
                         }
-                        onAttach={(files) => void attach(files)}
+                        onAttach={(files, placement) => void attach(files, active.id, placement)}
                         onChat={(text) => ctx.openChat(text, active.id)}
                         onBlockAction={(action, block) =>
                           ctx.blockAction?.(action, block, active.id)

@@ -8,6 +8,7 @@ import {
   Plus,
   BookA,
   Link2,
+  Pin,
 } from "lucide-react";
 import type { AppContext } from "./WorkspaceApp";
 import { noteDisplayTitle } from "@/lib/journal-date";
@@ -65,6 +66,9 @@ export default function TabSidebar({
             </small>
           )}
         </span>
+        {note.metadata?.pinned === true && (
+          <Pin size={13} className="note-pin" role="img" aria-label="Pinned note" />
+        )}
       </button>
     ));
   if (view === "journal" || view === "dreams") {

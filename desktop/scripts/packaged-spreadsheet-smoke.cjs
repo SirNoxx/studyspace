@@ -1,0 +1,44 @@
+const { _electron: electron, expect } = require('@playwright/test');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const root = path.resolve(__dirname, '../..');
+(async () => {
+  const profile = path.join(root, 'desktop/.smoke/release-sheet-' + Date.now());
+  await fs.mkdir(profile, {recursive:true});
+  await fs.writeFile(path.join(profile, 'desktop-settings.json'), JSON.stringify({lastWorkspace:'local',automaticUpdates:false}));
+  const env = {...process.env, STUDYSPACE_SMOKE_DATA:profile}; delete env.ELECTRON_RUN_AS_NODE;
+  const app = await electron.launch({executablePath:path.join(root,'desktop/release/win-unpacked/Studyspace.exe'),args:['--smoke-test'],env,timeout:60000});
+  try {
+    const page = await app.firstWindow();
+    await page.waitForURL('http://127.0.0.1:47832/**', {timeout:60000});
+    const errors=[]; page.on('pageerror', error=>errors.push(error.message));
+    await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+    await page.goto('http://127.0.0.1:47832/demo?sample=1');
+    await page.getByRole('textbox',{name:'Markdown editor',exact:true}).fill('```module studyspace:release-sheet\n'+JSON.stringify({version:1,kind:'spreadsheet',workbookId:require('node:crypto').randomUUID()})+'\n```');
+    const sheet=page.locator('.spreadsheet-module');
+    const cell=sheet.locator('td[data-sheet-row="0"][data-sheet-column="0"]');
+    await expect(cell).toBeVisible({timeout:90000});
+    await cell.dblclick();
+    await sheet.getByLabel('Edit cell A1').fill('=SUM(4,6)');
+    await sheet.getByLabel('Edit cell A1').press('Tab');
+    await expect(cell).toHaveText('10');
+    await cell.click();
+    await sheet.getByLabel('Spreadsheet cell color').fill('#113355');
+    await sheet.getByLabel('Spreadsheet font size',{exact:true}).fill('24');
+    await expect(cell).toHaveCSS('font-size','32px');
+    await expect(cell).toHaveCSS('background-color','rgb(17, 51, 85)');
+    await cell.press('Delete');
+    await expect(cell).toHaveText('');
+    await expect(cell).not.toHaveCSS('background-color','rgb(17, 51, 85)');
+    await sheet.getByRole('button',{name:'Undo',exact:true}).click();
+    await expect(cell).toHaveText('10');
+    await expect(sheet.getByRole('status')).toHaveText('Saved on this device');
+    await page.reload();
+    await expect(cell).toHaveText('10',{timeout:60000});
+    await expect(cell).toHaveCSS('font-size','32px');
+    await expect(cell).toHaveCSS('background-color','rgb(17, 51, 85)');
+    assert.deepEqual(errors,[]);
+    console.log('PASS: actual 2.2.0 packaged app, external network blocked, direct cell editing, formulas, immediate font size, clearing styles, undo, durable reload.');
+  } finally { await app.close(); }
+})().catch(error=>{console.error(error);process.exitCode=1;});

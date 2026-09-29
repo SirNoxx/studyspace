@@ -27,7 +27,10 @@ beforeEach(() => {
   vi.stubEnv("AI_API_KEY", "synthetic-test-key");
   vi.stubEnv("AI_MODEL", "synthetic-test-model");
   mocks.requireUser.mockResolvedValue({ user: { id: "user" } });
-  mocks.rpc.mockResolvedValue({ data: true });
+  vi.stubEnv("AI_QUOTA_SECRET", "synthetic-quota-secret");
+  mocks.rpc.mockResolvedValue({
+    data: { allowed: true, remaining: 99, reset: "2026-09-30T00:00:00Z" },
+  });
   mocks.stream.mockImplementation(
     () =>
       new ReadableStream({
@@ -82,8 +85,31 @@ it("accepts per-request consent while the cloud preference is still saving", asy
   ).toBe(200);
   expect(mocks.stream).toHaveBeenCalledOnce();
 });
-it("still requires authentication to use local material", async () => {
+it("allows explicitly shared local material without signing in", async () => {
   mocks.requireUser.mockRejectedValue(new Error("AUTH_REQUIRED"));
-  expect((await POST(request(fixture().payload))).status).toBe(401);
+  expect((await POST(request(fixture().payload))).status).toBe(200);
+  expect(mocks.stream).toHaveBeenCalledOnce();
+  expect(mocks.load).not.toHaveBeenCalled();
+});
+
+it("never loads private cloud workspaces for guests", async () => {
+  mocks.requireUser.mockRejectedValue(new Error("AUTH_REQUIRED"));
+  expect(
+    (await POST(request({ ...fixture().payload, localContext: undefined })))
+      .status,
+  ).toBe(401);
+  expect(mocks.load).not.toHaveBeenCalled();
+  expect(mocks.stream).not.toHaveBeenCalled();
+});
+it("reserves all usage before streaming and blocks when quotas fail", async () => {
+  mocks.rpc.mockResolvedValue({
+    data: { allowed: false, reason: "daily", reset: "2099-01-01T00:00:00Z" },
+  });
+  const response = await POST(request(fixture().payload));
+  expect(response.status).toBe(429);
+  expect(response.headers.get("Retry-After")).toBeTruthy();
+  expect(mocks.stream).not.toHaveBeenCalled();
+  mocks.rpc.mockResolvedValue({ error: { message: "unavailable" } });
+  expect((await POST(request(fixture().payload))).status).toBe(503);
   expect(mocks.stream).not.toHaveBeenCalled();
 });

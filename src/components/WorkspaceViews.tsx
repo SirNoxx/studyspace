@@ -2095,8 +2095,8 @@ export default function WorkspaceViews({
                   </Field>
                   {localSocial ? (
                     <p className="demo-disclosure">
-                      Your notes are on this device. Sign in to use AI and
-                      community features.{" "}
+                      Your notes are on this device. Free AI works without
+                      sign-in. Connect an account for community features.{" "}
                       <button
                         onClick={() =>
                           void connectAccount().catch((e) =>

@@ -36,6 +36,8 @@ import {
   Type,
   Bold,
   Italic,
+  Smartphone,
+  Monitor,
 } from "lucide-react";
 import type { StudyCodeBlock, BlockAction } from "@/lib/code-blocks";
 import {
@@ -237,6 +239,8 @@ export default function Whiteboard({
   readOnly?: boolean;
 }) {
   const data = useMemo(() => parseBoard(block.code), [block.code]);
+  const [viewOverride, setViewOverride] = useState<BoardData["viewMode"]>();
+  const mobile = (viewOverride ?? data?.viewMode ?? "desktop") === "mobile";
   const [tool, setTool] = useState<DrawingTool | "eraser" | "hand">("pen"),
     [color, setColor] = useState(colors[0]),
     [width, setWidth] = useState(4);
@@ -262,6 +266,16 @@ export default function Whiteboard({
   const [surfaceSize, setSurfaceSize] = useState({ width: 1000, height: 625 });
   const surfaceWidth = surfaceSize.width,
     canvasHeight = (1000 * surfaceSize.height) / surfaceWidth;
+  const previousCanvasHeight = useRef(canvasHeight);
+  useEffect(() => {
+    const previous = previousCanvasHeight.current;
+    previousCanvasHeight.current = canvasHeight;
+    // Keep the camera centered when the framing or available screen size changes.
+    setViewport((v) => ({
+      ...v,
+      y: boardCoordinate(v.y + (previous - canvasHeight) / (2 * v.zoom)),
+    }));
+  }, [canvasHeight]);
   const pan = useRef<{
     pointer: number;
     x: number;
@@ -362,11 +376,24 @@ export default function Whiteboard({
     setErased([]);
     gesture.current = null;
   }, [block.id]);
+  useEffect(() => setViewOverride(undefined), [block.id]);
   const commit = (next: BoardData) => {
     if (!latest.current.data) return;
     setUndo((old) => [...old.slice(-29), latest.current.data!]);
     setRedo([]);
     latest.current.onChange?.({ code: JSON.stringify(next) });
+  };
+  const viewOption = {
+    label: mobile
+      ? "Switch to desktop view"
+      : "Switch to mobile portrait (9:16)",
+    icon: mobile ? Monitor : Smartphone,
+    action: () => {
+      const viewMode = mobile ? "desktop" : "mobile";
+      if (readOnly || !onChange) setViewOverride(viewMode);
+      else if (latest.current.data)
+        commit({ ...latest.current.data, viewMode });
+    },
   };
   // Persist every edit without replacing the textarea or splitting one editing
   // session into an undo entry per keystroke / pointer movement.
@@ -527,12 +554,21 @@ export default function Whiteboard({
       full
         .querySelectorAll("[data-text-controls]")
         .forEach((el) => el.remove());
-      const bounds = boardBounds(data!);
+      const bounds = mobile
+        ? {
+            x: viewport.x,
+            y: viewport.y,
+            width: 1000 / viewport.zoom,
+            height: canvasHeight / viewport.zoom,
+          }
+        : boardBounds(data!);
       full.setAttribute(
         "viewBox",
         `${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height}`,
       );
-      const imageScale = 2000 / Math.max(bounds.width, bounds.height);
+      const imageScale = mobile
+        ? 1920 / bounds.height
+        : 2000 / Math.max(bounds.width, bounds.height);
       full.setAttribute(
         "width",
         String(Math.max(1, Math.round(bounds.width * imageScale))),
@@ -550,7 +586,7 @@ export default function Whiteboard({
         img.src = url;
         await img.decode();
         const canvas = document.createElement("canvas");
-        const scale = 2000 / Math.max(bounds.width, bounds.height);
+        const scale = imageScale;
         canvas.width = Math.max(1, Math.round(bounds.width * scale));
         canvas.height = Math.max(1, Math.round(bounds.height * scale));
         canvas
@@ -698,387 +734,394 @@ export default function Whiteboard({
           </div>
         </div>
       )}
-      <svg
-        ref={attachSurface}
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox={`${viewport.x} ${viewport.y} ${1000 / viewport.zoom} ${canvasHeight / viewport.zoom}`}
-        width="1000"
-        height="625"
-        className={"whiteboard-surface tool-" + tool}
-        role={readOnly ? "img" : "group"}
-        aria-label={
-          readOnly ? "Saved whiteboard drawing" : "Whiteboard drawing surface"
+      <div
+        className={
+          "whiteboard-stage" + (mobile ? " whiteboard-stage-mobile" : "")
         }
-        tabIndex={0}
-        onKeyUp={(e) => {
-          if (e.code === "Space") spacePan.current = false;
-        }}
-        onBlur={() => {
-          spacePan.current = false;
-        }}
-        onKeyDown={(e) => {
-          if (e.target === e.currentTarget) {
-            if (e.code === "Space") {
-              e.preventDefault();
-              spacePan.current = true;
-              return;
-            }
-            if (
-              ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
-                e.key,
-              )
-            ) {
-              e.preventDefault();
-              setViewport((v) => ({
-                ...v,
-                x: boardCoordinate(
-                  v.x +
-                    (e.key === "ArrowRight"
-                      ? 80
-                      : e.key === "ArrowLeft"
-                        ? -80
-                        : 0) /
-                      v.zoom,
-                ),
-                y: boardCoordinate(
-                  v.y +
-                    (e.key === "ArrowDown"
-                      ? 80
-                      : e.key === "ArrowUp"
-                        ? -80
-                        : 0) /
-                      v.zoom,
-                ),
-              }));
-              return;
-            }
-            if (e.key === "+" || e.key === "=") {
-              e.preventDefault();
-              zoom(1.25);
-              return;
-            }
-            if (e.key === "-") {
-              e.preventDefault();
-              zoom(1 / 1.25);
-              return;
-            }
-          }
-          if (readOnly) return;
-          if (e.key === "Escape") {
-            deselectText();
-            e.stopPropagation();
-          }
-          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-            deselectText();
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.shiftKey) {
-              if (redo.length) {
-                setRedo(redo.slice(0, -1));
-                setUndo([...undo, data]);
-                onChange?.({ code: JSON.stringify(redo.at(-1)) });
-              }
-            } else if (undo.length) {
-              setUndo(undo.slice(0, -1));
-              setRedo([...redo, data]);
-              onChange?.({ code: JSON.stringify(undo.at(-1)) });
-            }
-          }
-        }}
-        onPointerDown={(e) => {
-          if (![0, 1].includes(e.button) || gesture.current) return;
-          e.preventDefault();
-          e.currentTarget.focus();
-          if (
-            tool === "hand" ||
-            e.button === 1 ||
-            spacePan.current ||
-            readOnly
-          ) {
-            deselectText();
-            pan.current = {
-              pointer: e.pointerId,
-              x: e.clientX,
-              y: e.clientY,
-              start: viewport,
-            };
-            e.currentTarget.setPointerCapture(e.pointerId);
-            return;
-          }
-          const control = (e.target as Element)
-            .closest("[data-text-gesture]")
-            ?.getAttribute("data-text-gesture");
-          if (textEdit && (control === "resize" || control === "move")) {
-            resize.current = {
-              pointer: e.pointerId,
-              start: textEdit,
-              mode: control,
-              point: point(e),
-            };
-            e.currentTarget.setPointerCapture(e.pointerId);
-            return;
-          }
-          const id = (e.target as Element)
-            .closest("[data-stroke-id]")
-            ?.getAttribute("data-stroke-id");
-          const existing = data.strokes.find(
-            (s) => s.id === id && s.tool === "text",
-          );
-          if (existing && tool !== "eraser") {
-            const box = textBox(existing);
-            textSession.current = null;
-            setTextEdit({
-              ...existing,
-              points: [[box.x, box.y]],
-              boxWidth: box.width,
-              boxHeight: box.height,
-            });
-            return;
-          }
-          deselectText();
-          if (tool === "text") {
-            if (data.strokes.length < 1000) {
-              const p = point(e),
-                x = boardCoordinate(p[0] - 20),
-                y = boardCoordinate(p[1] - 24);
-              updateText({
-                id: crypto.randomUUID(),
-                tool: "text",
-                text: "",
-                color,
-                width: 24,
-                points: [[x, y]],
-                boxWidth: 40,
-                boxHeight: 48,
-                autoSize: true,
-              });
-            } else
-              setMessage(
-                "This board has 1,000 objects. Add another whiteboard to keep writing.",
-              );
-            return;
-          }
-          if (data.strokes.length >= 1000 && tool !== "eraser") {
-            setMessage(
-              "This board has 1,000 strokes. Add another whiteboard to keep drawing.",
-            );
-            return;
-          }
-          e.currentTarget.setPointerCapture(e.pointerId);
-          const stroke: BoardStroke | null =
-            tool === "eraser"
-              ? null
-              : {
-                  id: crypto.randomUUID(),
-                  tool,
-                  color,
-                  width: Math.min(
-                    60,
-                    width *
-                      (tool === "brush" ? 2 : tool === "highlighter" ? 3 : 1),
-                  ),
-                  points: [point(e)],
-                };
-          gesture.current = {
-            pointer: e.pointerId,
-            stroke,
-            removed: new Set(),
-            base: data,
-          };
-          setDraft(stroke);
-          move(e);
-        }}
-        onPointerMove={move}
-        onPointerUp={(e) => finish(e)}
-        onPointerCancel={(e) => finish(e, true)}
+        data-view-mode={mobile ? "mobile" : "desktop"}
       >
-        <defs>
-          <pattern
-            id={pattern}
-            width="25"
-            height="25"
-            patternUnits="userSpaceOnUse"
-          >
-            {data.background === "dots" ? (
-              <circle cx="2" cy="2" r="1" fill="#cbd5e1" />
-            ) : data.background === "grid" ? (
-              <path
-                d="M25 0H0V25"
-                fill="none"
-                stroke="#dbe3ec"
-                strokeWidth="1"
-              />
-            ) : data.background === "ruled" ? (
-              <path d="M0 24H25" stroke="#dbe3ec" strokeWidth="1" />
-            ) : null}
-          </pattern>
-        </defs>
-        <rect
-          x={-BOARD_LIMIT}
-          y={-BOARD_LIMIT}
-          width={BOARD_LIMIT * 2}
-          height={BOARD_LIMIT * 2}
-          fill="#ffffff"
-        />
-        {data.background !== "blank" && (
+        <svg
+          ref={attachSurface}
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox={`${viewport.x} ${viewport.y} ${1000 / viewport.zoom} ${canvasHeight / viewport.zoom}`}
+          width="1000"
+          height="625"
+          className={"whiteboard-surface tool-" + tool}
+          role={readOnly ? "img" : "group"}
+          aria-label={
+            readOnly ? "Saved whiteboard drawing" : "Whiteboard drawing surface"
+          }
+          tabIndex={0}
+          onKeyUp={(e) => {
+            if (e.code === "Space") spacePan.current = false;
+          }}
+          onBlur={() => {
+            spacePan.current = false;
+          }}
+          onKeyDown={(e) => {
+            if (e.target === e.currentTarget) {
+              if (e.code === "Space") {
+                e.preventDefault();
+                spacePan.current = true;
+                return;
+              }
+              if (
+                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+                  e.key,
+                )
+              ) {
+                e.preventDefault();
+                setViewport((v) => ({
+                  ...v,
+                  x: boardCoordinate(
+                    v.x +
+                      (e.key === "ArrowRight"
+                        ? 80
+                        : e.key === "ArrowLeft"
+                          ? -80
+                          : 0) /
+                        v.zoom,
+                  ),
+                  y: boardCoordinate(
+                    v.y +
+                      (e.key === "ArrowDown"
+                        ? 80
+                        : e.key === "ArrowUp"
+                          ? -80
+                          : 0) /
+                        v.zoom,
+                  ),
+                }));
+                return;
+              }
+              if (e.key === "+" || e.key === "=") {
+                e.preventDefault();
+                zoom(1.25);
+                return;
+              }
+              if (e.key === "-") {
+                e.preventDefault();
+                zoom(1 / 1.25);
+                return;
+              }
+            }
+            if (readOnly) return;
+            if (e.key === "Escape") {
+              deselectText();
+              e.stopPropagation();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+              deselectText();
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.shiftKey) {
+                if (redo.length) {
+                  setRedo(redo.slice(0, -1));
+                  setUndo([...undo, data]);
+                  onChange?.({ code: JSON.stringify(redo.at(-1)) });
+                }
+              } else if (undo.length) {
+                setUndo(undo.slice(0, -1));
+                setRedo([...redo, data]);
+                onChange?.({ code: JSON.stringify(undo.at(-1)) });
+              }
+            }
+          }}
+          onPointerDown={(e) => {
+            if (![0, 1].includes(e.button) || gesture.current) return;
+            e.preventDefault();
+            e.currentTarget.focus();
+            if (
+              tool === "hand" ||
+              e.button === 1 ||
+              spacePan.current ||
+              readOnly
+            ) {
+              deselectText();
+              pan.current = {
+                pointer: e.pointerId,
+                x: e.clientX,
+                y: e.clientY,
+                start: viewport,
+              };
+              e.currentTarget.setPointerCapture(e.pointerId);
+              return;
+            }
+            const control = (e.target as Element)
+              .closest("[data-text-gesture]")
+              ?.getAttribute("data-text-gesture");
+            if (textEdit && (control === "resize" || control === "move")) {
+              resize.current = {
+                pointer: e.pointerId,
+                start: textEdit,
+                mode: control,
+                point: point(e),
+              };
+              e.currentTarget.setPointerCapture(e.pointerId);
+              return;
+            }
+            const id = (e.target as Element)
+              .closest("[data-stroke-id]")
+              ?.getAttribute("data-stroke-id");
+            const existing = data.strokes.find(
+              (s) => s.id === id && s.tool === "text",
+            );
+            if (existing && tool !== "eraser") {
+              const box = textBox(existing);
+              textSession.current = null;
+              setTextEdit({
+                ...existing,
+                points: [[box.x, box.y]],
+                boxWidth: box.width,
+                boxHeight: box.height,
+              });
+              return;
+            }
+            deselectText();
+            if (tool === "text") {
+              if (data.strokes.length < 1000) {
+                const p = point(e),
+                  x = boardCoordinate(p[0] - 20),
+                  y = boardCoordinate(p[1] - 24);
+                updateText({
+                  id: crypto.randomUUID(),
+                  tool: "text",
+                  text: "",
+                  color,
+                  width: 24,
+                  points: [[x, y]],
+                  boxWidth: 40,
+                  boxHeight: 48,
+                  autoSize: true,
+                });
+              } else
+                setMessage(
+                  "This board has 1,000 objects. Add another whiteboard to keep writing.",
+                );
+              return;
+            }
+            if (data.strokes.length >= 1000 && tool !== "eraser") {
+              setMessage(
+                "This board has 1,000 strokes. Add another whiteboard to keep drawing.",
+              );
+              return;
+            }
+            e.currentTarget.setPointerCapture(e.pointerId);
+            const stroke: BoardStroke | null =
+              tool === "eraser"
+                ? null
+                : {
+                    id: crypto.randomUUID(),
+                    tool,
+                    color,
+                    width: Math.min(
+                      60,
+                      width *
+                        (tool === "brush" ? 2 : tool === "highlighter" ? 3 : 1),
+                    ),
+                    points: [point(e)],
+                  };
+            gesture.current = {
+              pointer: e.pointerId,
+              stroke,
+              removed: new Set(),
+              base: data,
+            };
+            setDraft(stroke);
+            move(e);
+          }}
+          onPointerMove={move}
+          onPointerUp={(e) => finish(e)}
+          onPointerCancel={(e) => finish(e, true)}
+        >
+          <defs>
+            <pattern
+              id={pattern}
+              width="25"
+              height="25"
+              patternUnits="userSpaceOnUse"
+            >
+              {data.background === "dots" ? (
+                <circle cx="2" cy="2" r="1" fill="#cbd5e1" />
+              ) : data.background === "grid" ? (
+                <path
+                  d="M25 0H0V25"
+                  fill="none"
+                  stroke="#dbe3ec"
+                  strokeWidth="1"
+                />
+              ) : data.background === "ruled" ? (
+                <path d="M0 24H25" stroke="#dbe3ec" strokeWidth="1" />
+              ) : null}
+            </pattern>
+          </defs>
           <rect
             x={-BOARD_LIMIT}
             y={-BOARD_LIMIT}
             width={BOARD_LIMIT * 2}
             height={BOARD_LIMIT * 2}
-            fill={`url(#${pattern})`}
+            fill="#ffffff"
           />
-        )}
-        {data.strokes
-          .filter((s) => !erased.includes(s.id))
-          .map((s) => (
-            <Stroke key={s.id} stroke={s} editing={textEdit?.id === s.id} />
-          ))}
-        {draft && <Stroke stroke={draft} />}
-        {!readOnly &&
-          textEdit &&
-          (() => {
-            const box = textBox(textEdit);
-            const handleSize = (24 * 1000) / surfaceWidth / viewport.zoom;
-            return (
-              <g data-text-controls="true">
-                <foreignObject
-                  x={box.x}
-                  y={box.y}
-                  width={box.width}
-                  height={box.height}
-                >
-                  <textarea
-                    key={textEdit.id}
-                    ref={textInput}
-                    aria-label="Whiteboard text box"
-                    className="whiteboard-inline-text"
-                    value={textEdit.text ?? ""}
-                    maxLength={4000}
-                    spellCheck
-                    style={{
-                      fontSize: textEdit.width,
-                      color: textEdit.color,
-                      fontWeight: textEdit.bold ? 700 : 400,
-                      fontStyle: textEdit.italic ? "italic" : "normal",
-                      paddingTop: textLayout(textEdit).top,
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      e.stopPropagation();
-                      if (e.key === "Escape") {
-                        deselectText();
-                        svg.current?.focus();
+          {data.background !== "blank" && (
+            <rect
+              x={-BOARD_LIMIT}
+              y={-BOARD_LIMIT}
+              width={BOARD_LIMIT * 2}
+              height={BOARD_LIMIT * 2}
+              fill={`url(#${pattern})`}
+            />
+          )}
+          {data.strokes
+            .filter((s) => !erased.includes(s.id))
+            .map((s) => (
+              <Stroke key={s.id} stroke={s} editing={textEdit?.id === s.id} />
+            ))}
+          {draft && <Stroke stroke={draft} />}
+          {!readOnly &&
+            textEdit &&
+            (() => {
+              const box = textBox(textEdit);
+              const handleSize = (24 * 1000) / surfaceWidth / viewport.zoom;
+              return (
+                <g data-text-controls="true">
+                  <foreignObject
+                    x={box.x}
+                    y={box.y}
+                    width={box.width}
+                    height={box.height}
+                  >
+                    <textarea
+                      key={textEdit.id}
+                      ref={textInput}
+                      aria-label="Whiteboard text box"
+                      className="whiteboard-inline-text"
+                      value={textEdit.text ?? ""}
+                      maxLength={4000}
+                      spellCheck
+                      style={{
+                        fontSize: textEdit.width,
+                        color: textEdit.color,
+                        fontWeight: textEdit.bold ? 700 : 400,
+                        fontStyle: textEdit.italic ? "italic" : "normal",
+                        paddingTop: textLayout(textEdit).top,
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        e.stopPropagation();
+                        if (e.key === "Escape") {
+                          deselectText();
+                          svg.current?.focus();
+                        }
+                        if (
+                          (e.ctrlKey || e.metaKey) &&
+                          ["b", "i"].includes(e.key.toLowerCase())
+                        ) {
+                          e.preventDefault();
+                          updateText({
+                            ...textEdit,
+                            ...(e.key.toLowerCase() === "b"
+                              ? { bold: !textEdit.bold }
+                              : { italic: !textEdit.italic }),
+                          });
+                        }
+                      }}
+                      onChange={(e) =>
+                        updateText({ ...textEdit, text: e.target.value })
                       }
-                      if (
-                        (e.ctrlKey || e.metaKey) &&
-                        ["b", "i"].includes(e.key.toLowerCase())
-                      ) {
-                        e.preventDefault();
-                        updateText({
-                          ...textEdit,
-                          ...(e.key.toLowerCase() === "b"
-                            ? { bold: !textEdit.bold }
-                            : { italic: !textEdit.italic }),
-                        });
-                      }
-                    }}
-                    onChange={(e) =>
-                      updateText({ ...textEdit, text: e.target.value })
-                    }
-                  />
-                </foreignObject>
-                <rect
-                  x={box.x}
-                  y={box.y}
-                  width={box.width}
-                  height={box.height}
-                  fill="none"
-                  stroke="#2563eb"
-                  strokeWidth={2 / viewport.zoom}
-                  pointerEvents="none"
-                />
-                <rect
-                  data-text-gesture="move"
-                  x={box.x + Math.max(0, box.width / 2 - 24)}
-                  y={box.y - 12}
-                  width={48}
-                  height={12}
-                  rx={4}
-                  fill="#2563eb"
-                  style={{ cursor: "move" }}
-                >
-                  <title>Drag to move text box</title>
-                </rect>
-                <g
-                  data-text-gesture="resize"
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Resize text box"
-                  transform={`translate(${box.x + box.width} ${box.y + box.height}) scale(${handleSize / 24})`}
-                  style={{ cursor: "nwse-resize" }}
-                  onKeyDown={(e) => {
-                    if (
-                      ![
-                        "ArrowLeft",
-                        "ArrowRight",
-                        "ArrowUp",
-                        "ArrowDown",
-                      ].includes(e.key)
-                    )
-                      return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const step = e.shiftKey ? 10 : 1;
-                    updateText({
-                      ...textEdit,
-                      autoSize: false,
-                      boxWidth: Math.max(
-                        40,
-                        Math.min(
-                          10000,
-                          box.width +
-                            (e.key === "ArrowRight"
-                              ? step
-                              : e.key === "ArrowLeft"
-                                ? -step
-                                : 0),
-                        ),
-                      ),
-                      boxHeight: Math.max(
-                        32,
-                        Math.min(
-                          10000,
-                          box.height +
-                            (e.key === "ArrowDown"
-                              ? step
-                              : e.key === "ArrowUp"
-                                ? -step
-                                : 0),
-                        ),
-                      ),
-                    });
-                  }}
-                >
-                  <title>
-                    Drag to resize, or use arrow keys (Shift for larger steps)
-                  </title>
-                  <rect width="24" height="24" fill="transparent" />
-                  <path
-                    d="M5 5h7M5 5v7M5 5l14 14M19 19v-7M19 19h-7"
+                    />
+                  </foreignObject>
+                  <rect
+                    x={box.x}
+                    y={box.y}
+                    width={box.width}
+                    height={box.height}
                     fill="none"
                     stroke="#2563eb"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    vectorEffect="non-scaling-stroke"
+                    strokeWidth={2 / viewport.zoom}
                     pointerEvents="none"
                   />
+                  <rect
+                    data-text-gesture="move"
+                    x={box.x + Math.max(0, box.width / 2 - 24)}
+                    y={box.y - 12}
+                    width={48}
+                    height={12}
+                    rx={4}
+                    fill="#2563eb"
+                    style={{ cursor: "move" }}
+                  >
+                    <title>Drag to move text box</title>
+                  </rect>
+                  <g
+                    data-text-gesture="resize"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Resize text box"
+                    transform={`translate(${box.x + box.width} ${box.y + box.height}) scale(${handleSize / 24})`}
+                    style={{ cursor: "nwse-resize" }}
+                    onKeyDown={(e) => {
+                      if (
+                        ![
+                          "ArrowLeft",
+                          "ArrowRight",
+                          "ArrowUp",
+                          "ArrowDown",
+                        ].includes(e.key)
+                      )
+                        return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const step = e.shiftKey ? 10 : 1;
+                      updateText({
+                        ...textEdit,
+                        autoSize: false,
+                        boxWidth: Math.max(
+                          40,
+                          Math.min(
+                            10000,
+                            box.width +
+                              (e.key === "ArrowRight"
+                                ? step
+                                : e.key === "ArrowLeft"
+                                  ? -step
+                                  : 0),
+                          ),
+                        ),
+                        boxHeight: Math.max(
+                          32,
+                          Math.min(
+                            10000,
+                            box.height +
+                              (e.key === "ArrowDown"
+                                ? step
+                                : e.key === "ArrowUp"
+                                  ? -step
+                                  : 0),
+                          ),
+                        ),
+                      });
+                    }}
+                  >
+                    <title>
+                      Drag to resize, or use arrow keys (Shift for larger steps)
+                    </title>
+                    <rect width="24" height="24" fill="transparent" />
+                    <path
+                      d="M5 5h7M5 5v7M5 5l14 14M19 19v-7M19 19h-7"
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                      pointerEvents="none"
+                    />
+                  </g>
                 </g>
-              </g>
-            );
-          })()}
-      </svg>
+              );
+            })()}
+        </svg>
+      </div>
       {!readOnly && (
         <div
           className="whiteboard-text-editor"
@@ -1190,7 +1233,8 @@ export default function Whiteboard({
                 : tool === "eraser"
                   ? "Erase whole strokes · Undo restores them"
                   : "Draw with a mouse, touch, or stylus · Scroll to zoom"}{" "}
-          · {data.strokes.length} strokes
+          · {data.strokes.length} strokes ·{" "}
+          {mobile ? "Mobile 9:16" : "Desktop view"}
         </span>
         <button onClick={() => void exportImage()}>
           <Download size={15} />
@@ -1251,6 +1295,8 @@ export default function Whiteboard({
             </button>
           }
           items={[
+            viewOption,
+            "separator",
             {
               label: "Enlarge whiteboard",
               icon: Maximize2,
@@ -1314,7 +1360,21 @@ export default function Whiteboard({
           wide
           onClose={() => setExpanded(false)}
         >
-          <div className="whiteboard-expanded">{content()}</div>
+          <div className="whiteboard-expanded">
+            <div className="whiteboard-expanded-settings">
+              <span>{mobile ? "Mobile portrait · 9:16" : "Desktop view"}</span>
+              <Menu
+                trigger={
+                  <button aria-label="Whiteboard view settings">
+                    <MoreHorizontal size={18} />
+                    View settings
+                  </button>
+                }
+                items={[viewOption]}
+              />
+            </div>
+            {content()}
+          </div>
         </Modal>
       ) : !block.collapsed || readOnly ? (
         <div className="whiteboard-content">{content()}</div>

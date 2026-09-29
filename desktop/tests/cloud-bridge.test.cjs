@@ -4,6 +4,13 @@ const fs=require("node:fs/promises");
 const os=require("node:os");
 const path=require("node:path");
 const {CloudBridge}=require("../cloud-bridge.cjs");
+test("guest AI forwards quota identity and allowance without requiring a token",async t=>{
+ let received;
+ const f=await fixture(t,(url,init)=>{received=init;return new Response("free chat",{headers:{"X-AI-Remaining":"99","X-AI-Daily-Limit":"100"}});});
+ const response=await f.request("/api/ai",{method:"POST",headers:{"x-studyspace-ai-client":"test-device"},body:"{}"});
+ assert.equal(received.headers["x-studyspace-ai-client"],"test-device");assert.equal(received.headers.Authorization,undefined);
+ assert.equal(response.headers.get("x-ai-remaining"),"99");assert.equal(await response.text(),"free chat");
+});
 async function fixture(t,handler=()=>null){
  const folder=await fs.mkdtemp(path.join(os.tmpdir(),"studyspace-bridge-test-"));
  let origin="https://cloud.example.test",external;

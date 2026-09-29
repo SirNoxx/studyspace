@@ -1,8 +1,11 @@
 "use client";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
+import ModuleTextTools from "./ModuleTextTools";
+import ModuleText from "./ModuleText";
 import { localDateKey } from "@/lib/dates";
 import {
   MoreHorizontal,
+  Table2,
   ChevronDown,
   ChevronRight,
   Trash2,
@@ -14,7 +17,11 @@ import {
   ArrowLeft,
   ArrowRight,
 } from "lucide-react";
-import { Menu } from "./ui";
+import { Menu, Modal } from "./ui";
+import TableModule from "./TableModule";
+import FormattedList from "./FormattedList";
+import dynamic from "next/dynamic";
+const SpreadsheetModule = dynamic(() => import("./SpreadsheetModule"), { ssr: false, loading: () => <p role="status">Loading spreadsheet editor…</p> });
 import {
   parseModule,
   chartCandles,
@@ -345,6 +352,8 @@ export default function NoteModule({
   readOnly?: boolean;
 }) {
   const data = useMemo(() => parseModule(block.code), [block.code]);
+  const moduleRoot = useRef<HTMLElement>(null);
+  const [convertTable, setConvertTable] = useState(false);
   const update = (next: ModuleData) =>
     onChange?.({ code: JSON.stringify(next) });
   const field = (
@@ -356,7 +365,7 @@ export default function NoteModule({
     <label className="module-field">
       <span>{label}</span>
       {readOnly ? (
-        <div className="module-text">{value || "—"}</div>
+        <ModuleText text={value} />
       ) : (
         <textarea
           aria-label={label}
@@ -377,9 +386,18 @@ export default function NoteModule({
     );
   let content: React.ReactNode;
   switch (data.kind) {
+    case "spreadsheet":
+      content = <SpreadsheetModule data={data} title={block.title ?? "Spreadsheet"} readOnly={readOnly} onChange={update} />;
+      break;
     case "definition":
       content = (
         <div className="definition-module">
+          {!readOnly && <div className="definition-module-attach">
+            <button type="button" className="secondary" onClick={() => moduleRoot.current?.dispatchEvent(new CustomEvent("studyspace:module-definition", { bubbles: true, detail: { blockId: block.id, code: block.code } }))}>
+              <BookOpen size={14} />Attach a definition
+            </button>
+            {data.definitionId && <small>Attached definition. Edits here apply to this module.</small>}
+          </div>}
           <label className="module-field">
             <span>Term</span>
             {readOnly ? (
@@ -506,115 +524,7 @@ export default function NoteModule({
       );
       break;
     case "table":
-      content = (
-        <>
-          <div className="module-table-scroll">
-            <table className="module-table">
-              <thead>
-                <tr>
-                  {data.headers.map((h, c) => (
-                    <th key={c}>
-                      {readOnly ? (
-                        h
-                      ) : (
-                        <input
-                          aria-label={`Column ${c + 1} heading`}
-                          value={h}
-                          maxLength={20000}
-                          onChange={(e) =>
-                            update({
-                              ...data,
-                              headers: data.headers.map((v, i) =>
-                                i === c ? e.target.value : v,
-                              ),
-                            })
-                          }
-                        />
-                      )}
-                    </th>
-                  ))}
-                  {!readOnly && <th aria-label="Row actions" />}
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.map((row, r) => (
-                  <tr key={r}>
-                    {row.map((value, c) => (
-                      <td key={c}>
-                        {readOnly ? (
-                          <div className="module-text">{value}</div>
-                        ) : (
-                          <textarea
-                            aria-label={`Row ${r + 1}, column ${c + 1}`}
-                            value={value}
-                            maxLength={20000}
-                            onChange={(e) =>
-                              update({
-                                ...data,
-                                rows: data.rows.map((row, i) =>
-                                  i === r
-                                    ? row.map((v, j) =>
-                                        j === c ? e.target.value : v,
-                                      )
-                                    : row,
-                                ),
-                              })
-                            }
-                          />
-                        )}
-                      </td>
-                    ))}
-                    {!readOnly && (
-                      <td>
-                        <button
-                          aria-label={`Delete row ${r + 1}`}
-                          onClick={() =>
-                            update({
-                              ...data,
-                              rows: data.rows.filter((_, i) => i !== r),
-                            })
-                          }
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!readOnly && (
-            <div className="module-controls">
-              <button
-                disabled={data.rows.length >= 100}
-                onClick={() =>
-                  update({
-                    ...data,
-                    rows: [...data.rows, data.headers.map(() => "")],
-                  })
-                }
-              >
-                <Plus size={14} />
-                Add row
-              </button>
-              <button
-                disabled={data.headers.length >= 12}
-                onClick={() =>
-                  update({
-                    ...data,
-                    headers: [...data.headers, "Column"],
-                    rows: data.rows.map((r) => [...r, ""]),
-                  })
-                }
-              >
-                <Plus size={14} />
-                Add column
-              </button>
-            </div>
-          )}
-        </>
-      );
+      content = <><TableModule data={data} readOnly={readOnly} onChange={update} />{convertTable && <Modal title="Convert table to spreadsheet" onClose={() => setConvertTable(false)}><p>Move {data.headers.length} columns and {data.rows.length} rows into an editable spreadsheet. Text and headers are preserved. Undo in the note restores this table.</p><p>{data.headers.join(" · ")}</p><button type="button" className="primary" onClick={() => { update({version:1,kind:'spreadsheet',workbookId:crypto.randomUUID(),seed:{headers:data.headers,rows:data.rows}});setConvertTable(false); }}>Convert table</button></Modal>}</>;
       break;
     case "venn":
       content = (
@@ -868,107 +778,7 @@ export default function NoteModule({
       );
       break;
     case "list":
-      content = (
-        <>
-          {!readOnly && (
-            <div className="module-controls">
-              <label>
-                List style
-                <select
-                  aria-label="List style"
-                  value={data.style}
-                  onChange={(e) =>
-                    update({
-                      ...data,
-                      style: e.target.value as typeof data.style,
-                    })
-                  }
-                >
-                  <option value="bullets">Bullets</option>
-                  <option value="numbered">Numbered</option>
-                  <option value="todo">To-do</option>
-                </select>
-              </label>
-            </div>
-          )}
-          <div className="module-list">
-            {data.items.map((item, i) => (
-              <div
-                key={i}
-                className={
-                  item.done && data.style === "todo" ? "completed" : ""
-                }
-              >
-                {data.style === "todo" ? (
-                  <input
-                    type="checkbox"
-                    aria-label={`Complete task ${i + 1}`}
-                    checked={item.done}
-                    disabled={readOnly}
-                    onChange={(e) =>
-                      update({
-                        ...data,
-                        items: data.items.map((v, j) =>
-                          j === i ? { ...v, done: e.target.checked } : v,
-                        ),
-                      })
-                    }
-                  />
-                ) : (
-                  <span>{data.style === "numbered" ? `${i + 1}.` : "•"}</span>
-                )}
-                {readOnly ? (
-                  <span className="module-text">{item.text}</span>
-                ) : (
-                  <>
-                    <textarea
-                      aria-label={`List item ${i + 1}`}
-                      value={item.text}
-                      maxLength={20000}
-                      placeholder="Write an item…"
-                      onChange={(e) =>
-                        update({
-                          ...data,
-                          items: data.items.map((v, j) =>
-                            j === i ? { ...v, text: e.target.value } : v,
-                          ),
-                        })
-                      }
-                    />
-                    <button
-                      aria-label={`Delete list item ${i + 1}`}
-                      onClick={() =>
-                        update({
-                          ...data,
-                          items: data.items.filter((_, j) => j !== i),
-                        })
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-          {!readOnly && (
-            <div className="module-controls">
-              <button
-                disabled={data.items.length >= 100}
-                onClick={() =>
-                  update({
-                    ...data,
-                    items: [...data.items, { text: "", done: false }],
-                  })
-                }
-              >
-                <Plus size={14} />
-                Add item
-              </button>
-            </div>
-          )}
-        </>
-      );
+      content = <FormattedList data={data} readOnly={readOnly} onChange={update} />;
       break;
     case "calendar": {
       const [year, month] = data.month.split("-").map(Number),
@@ -1038,7 +848,7 @@ export default function NoteModule({
                   >
                     <span>{i + 1}</span>
                     {readOnly ? (
-                      <div className="module-text">{data.entries[day]}</div>
+                      <ModuleText text={data.entries[day] ?? ""} />
                     ) : (
                       <textarea
                         aria-label={`Notes for ${day}`}
@@ -1064,10 +874,12 @@ export default function NoteModule({
   }
   return (
     <section
+      ref={moduleRoot}
       className={"note-module note-module-" + data.kind}
       aria-label={`${data.kind} module`}
       onContextMenu={(e) => e.stopPropagation()}
     >
+      <ModuleTextTools root={moduleRoot} readOnly={readOnly} />
       <header className="module-heading">
         {!readOnly && (
           <button
@@ -1100,10 +912,11 @@ export default function NoteModule({
               </button>
             }
             items={[
+              ...(data.kind === "table" ? [{ label: "Convert to spreadsheet", icon: Table2, action: () => setConvertTable(true) }] : []),
               {
                 label: "Save editable copy",
                 icon: Save,
-                action: () => onAction("save"),
+                action: () => data.kind === "spreadsheet" ? moduleRoot.current?.querySelector<HTMLButtonElement>('[data-workbook-backup]')?.click() : onAction("save"),
               },
               {
                 label: "Add to folder / file",

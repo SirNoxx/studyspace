@@ -1,0 +1,44 @@
+{
+  "version": "2.2.0",
+  "verifiedAt": "2026-09-29T17:38:42.185Z",
+  "platform": "Windows x64",
+  "unitTests": {
+    "files": 41,
+    "tests": 217
+  },
+  "desktopTests": 17,
+  "productionBuild": "passed including TypeScript",
+  "packagedChecks": [
+    "startup including slow startup, port conflict and closing while loading",
+    "local immediate-close save and restart persistence",
+    "fresh and legacy desktop connection preferences",
+    "account handoff, AI streaming and sign-out using mocked hosted transport",
+    "actual packaged spreadsheet direct editing, formula, immediate font size, clear styling, undo and reload with external network blocked",
+    "NSIS updater download and checksum verification; corrupt manifest rejected"
+  ],
+  "installerExecuted": false,
+  "authenticode": "NotSigned",
+  "bundledEnvironmentFiles": [],
+  "artifacts": [
+    {
+      "name": "Studyspace-Setup-2.2.0-x64.exe",
+      "bytes": 160357287,
+      "sha256": "17b9d8f7d914f4e3673510ea81b86dcc11cbcee7c4c8fcab0ea26e9cbee30e14"
+    },
+    {
+      "name": "Studyspace-Setup-2.2.0-x64.exe.blockmap",
+      "bytes": 167193,
+      "sha256": "f567f733748a3f62a42d49d353a512215d33887910b6c17a8b67c2aa5857fa2d"
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 357,
+      "sha256": "737836e9b0ffb600f3cd389873f4dec5bff2b32245d2ceeeb1e59c4a002ab90b"
+    }
+  ],
+  "limits": [
+    "Hosted service deployment and real-account end-to-end tests not performed",
+    "Windows x64 only",
+    "In-place upgrade installation not executed; application identity and data path retained"
+  ]
+}

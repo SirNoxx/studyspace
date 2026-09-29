@@ -645,7 +645,7 @@ export default function Learning({ ctx }: { ctx: AppContext }) {
                           notes={w.notes}
                           attachments={w.attachments}
                           demo={ctx.demo}
-                          onAttach={(files) => void ctx.attach(files, note.id)}
+                          onAttach={(files, placement) => void ctx.attach(files, note.id, placement)}
                           onChat={(text) => ctx.openChat(text, note.id)}
                           onBlockAction={(action, block) =>
                             ctx.blockAction?.(action, block, note.id)

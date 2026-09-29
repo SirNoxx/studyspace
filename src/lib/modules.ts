@@ -6,11 +6,30 @@ const item = z.object({ text, done: z.boolean() });
 export const moduleSchema = z.discriminatedUnion("kind", [
   z.object({
     version: z.literal(1),
+    kind: z.literal("spreadsheet"),
+    workbookId: z.string().uuid(),
+    seed: z
+      .object({
+        headers: z.array(text).max(12),
+        rows: z.array(z.array(text).max(12)).max(100),
+      })
+      .optional(),
+    preview: z
+      .object({
+        sheet: z.string().max(120),
+        range: z.string().max(60),
+        rows: z.array(z.array(z.string().max(2000)).max(30)).max(200),
+      })
+      .optional(),
+  }),
+  z.object({
+    version: z.literal(1),
     kind: z.literal("definition"),
     term: text,
     explanation: text,
     learned: z.boolean(),
     learnedAt: z.iso.datetime().optional(),
+    definitionId: z.string().max(100).optional(),
   }),
   z.object({ version: z.literal(1), kind: z.literal("uses"), text }),
   z.object({
@@ -105,6 +124,14 @@ export function validCandle(c: Candle) {
 }
 export const moduleTemplates = [
   {
+    id: "spreadsheet",
+    title: "Spreadsheet",
+    description:
+      "Local worksheets, formulas, formatting, groups and Excel import/export.",
+    category: "Data",
+    preview: "table",
+  },
+  {
     id: "definition",
     title: "Definition",
     description: "A term and its explanation, side by side. Shortcut: def:",
@@ -182,6 +209,8 @@ export function createModuleData(
   date = new Date(),
 ): ModuleData {
   switch (kind) {
+    case "spreadsheet":
+      return { version: 1, kind, workbookId: crypto.randomUUID() };
     case "definition":
       return { version: 1, kind, term: "", explanation: "", learned: false };
     case "uses":
@@ -265,6 +294,10 @@ export function moduleText(code: string): string {
   const d = parseModule(code);
   if (!d) return code;
   switch (d.kind) {
+    case "spreadsheet":
+      return d.preview
+        ? `${d.preview.sheet} (${d.preview.range})\n${d.preview.rows.map((row) => row.join(" | ")).join("\n")}`
+        : "Spreadsheet (stored separately; select a range in the spreadsheet to include a preview for study and publishing).";
     case "definition":
       return `${d.term}: ${d.explanation}${d.learned ? " (marked learned)" : ""}`;
     case "uses":

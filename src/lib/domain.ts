@@ -21,6 +21,7 @@ import {
   localDate,
 } from "./model";
 import { captureLinks, identifySource, publicMarkdown } from "./markdown";
+import {workbookReferences} from './spreadsheets/references';
 export class DomainError extends Error {
   constructor(
     message: string,
@@ -425,6 +426,8 @@ export function prepareSnapshot(
 ): Snapshot {
   const selected = w.notes.filter((n) => ids.includes(n.id) && !n.trashed);
   if (!selected.length) throw new DomainError("Select at least one note.");
+  const missingPreview=selected.find(n=>workbookReferences(n.body).some(ref=>!ref.data.preview));
+  if(missingPreview)throw new DomainError(`Select a spreadsheet range and choose “Include selected values in note preview” in “${missingPreview.title}” before publishing.`);
   const selectedIds = new Set(selected.map((n) => n.id));
   const titles = new Set(selected.map((n) => n.title));
   const assets = new Set(

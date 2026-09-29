@@ -17,6 +17,8 @@ import { resolveLink } from "./markdown";
 import { parseDocument } from "yaml";
 import { learningSettingsSchema } from "./learning-schema";
 import { syncModuleDefinitions } from "./module-definitions";
+import { workbookReferences } from "./spreadsheets/references";
+import type { WorkbookSnapshot } from "./spreadsheets/model";
 export function assetMime(path: string) {
   const ext = path.split(".").at(-1)?.toLowerCase();
   return (
@@ -51,7 +53,7 @@ export const importLimits = {
 export interface ImportFile {
   path: string;
   bytes: Uint8Array;
-  kind: "note" | "asset" | "manifest" | "excluded";
+  kind: "note" | "asset" | "manifest" | "workbook" | "excluded";
   reason?: string;
   hash: string;
 }
@@ -188,6 +190,7 @@ export async function prepareImport(files: File[]): Promise<ImportPlan> {
     )
       reason = "Configuration or executable content excluded.";
     else if (/(^|\/)studyspace-manifest\.json$/i.test(path)) kind = "manifest";
+    else if (/\.studyspace-sheet\.json$/i.test(path)) kind = "workbook";
     else if (/\.md$/i.test(path)) {
       kind = "note";
       if (item.bytes.length > importLimits.note)
@@ -604,6 +607,7 @@ export async function exportWorkspace(
     noteId?: string;
     full?: boolean;
     loadAsset?: (a: Attachment) => Promise<Uint8Array>;
+    loadWorkbook?: (id: string) => Promise<WorkbookSnapshot | undefined>;
     onProgress?: (value: number | undefined, message: string) => void;
   },
 ) {
@@ -617,6 +621,15 @@ export async function exportWorkspace(
   const files: Record<string, Uint8Array> = {},
     mapping: Record<string, string> = {};
   const used = new Set<string>();
+  const workbookMapping: Record<string, string> = {};
+  for (const n of notes) for (const { data } of workbookReferences(n.body)) {
+    if (workbookMapping[data.workbookId]) continue;
+    const snapshot = await options.loadWorkbook?.(data.workbookId);
+    if (!snapshot) throw new DomainError('A spreadsheet is unavailable. Open its note on the device that holds it, then export again.');
+    const path = `workbooks/${data.workbookId}.studyspace-sheet.json`;
+    files[path] = strToU8(JSON.stringify({ version: 1, workbookId: data.workbookId, snapshot }));
+    workbookMapping[data.workbookId] = path;
+  }
   let preparedCount = 0;
   for (const n of notes) {
     if (preparedCount++ % 50 === 0) {
@@ -705,7 +718,7 @@ export async function exportWorkspace(
   for (const n of notes) {
     const prefix = "../".repeat(mapping[n.id].split("/").length - 1);
     files[mapping[n.id]] = strToU8(
-      n.body
+      (n.body + workbookReferences(n.body).map(({ data }) => `\n\n[Spreadsheet workbook](${prefix}${workbookMapping[data.workbookId]})`).join(''))
         .replace(/#note:([0-9a-f-]{36})/gi, (all, id) =>
           mapping[id]
             ? prefix + mapping[id].split("/").map(encodeURIComponent).join("/")
@@ -721,6 +734,7 @@ export async function exportWorkspace(
     exportedAt: now(),
     mapping,
     assetMapping,
+    workbookMapping,
     notes,
     containers: w.containers.filter((c) => options.full || contexts.has(c.id)),
     definitions: defs,

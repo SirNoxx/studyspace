@@ -68,6 +68,15 @@ export default function DefinitionLinkPicker({
                   );
                   return;
                 }
+                if (typeof dialog.moduleReplace === "function") {
+                  if (!dialog.moduleReplace(definitionLink(String(dialog.value ?? ""), entry.id))) {
+                    setError("The module text changed. Select it again.");
+                    return;
+                  }
+                  ctx.toast("Attached “" + entry.term + "”.");
+                  onClose();
+                  return;
+                }
                 const note = ctx.w.notes.find((n) => n.id === dialog.sourceId),
                   from = Number(dialog.from),
                   to = Number(dialog.to);

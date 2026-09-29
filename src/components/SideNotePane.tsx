@@ -136,10 +136,16 @@ export default function SideNotePane({
             if (e.key === "Enter") handle.current?.focus();
           }}
         />
-        <div className="writing-area">
+        <div className="writing-area" data-workbook-scope={ctx.account} data-workbook-collection={ctx.collaboration?.id} data-note-id={note.id}>
           {mode === "reading" ? (
             <Markdown
+              key={note.id}
+              collapsibleHeadings
               body={note.body}
+              onBodyChange={ctx.collaboration?.readOnly ? undefined : (body, previous) => ctx.mutate((w) => {
+                const current = w.notes.find((n) => n.id === note.id);
+                if (current?.body === previous) saveNote(w, current.id, current.revision, { body });
+              })}
               definitions={definitions}
               onDefinition={(id) =>
                 ctx.setDialog({ type: "definition-detail", id })
@@ -174,7 +180,7 @@ export default function SideNotePane({
               onDefinition={(id) =>
                 ctx.setDialog({ type: "definition-detail", id })
               }
-              onAttach={(files) => void ctx.attach(files, note.id)}
+              onAttach={(files, placement) => void ctx.attach(files, note.id, placement)}
               onChat={(text) => ctx.openChat(text, note.id)}
               onBlockAction={(action, block) =>
                 ctx.blockAction?.(action, block, note.id)

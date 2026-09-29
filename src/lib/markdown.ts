@@ -4,7 +4,26 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { visit } from "unist-util-visit";
 import type { Definition } from "./model";
+import {publicSpreadsheetPreviews} from './spreadsheets/references';
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+/** Accept the compact task shorthand in reading views as well as the editor. */
+export function compactTaskLists() {
+  return (tree: any, file: { value: unknown }) => {
+    const source = String(file.value);
+    visit(tree, "listItem", (item: any) => {
+      if (item.checked != null) return;
+      const paragraph = item.children?.[0];
+      const text = paragraph?.type === "paragraph" && paragraph.children?.[0];
+      if (text?.type !== "text") return;
+      const offset = text.position?.start.offset;
+      const match = /^\[\](?:[\t ]+|$)/.exec(text.value);
+      // Escaped markers and links must remain literal text / links.
+      if (!match || offset == null || source.slice(offset, offset + 2) !== "[]") return;
+      item.checked = false;
+      text.value = text.value.slice(match[0].length);
+    });
+  };
+}
 export function proseRanges(markdown: string) {
   const ranges: { from: number; to: number; text: string }[] = [];
   const tree = parser.parse(markdown);
@@ -204,7 +223,7 @@ export function publicMarkdown(
   ids: Set<string>,
   assets: Set<string> = new Set(),
 ) {
-  let safe = body
+    let safe = publicSpreadsheetPreviews(body)
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
     .replace(/%%[\s\S]*?%%/g, "")
     .replace(/<!--[\s\S]*?-->/g, "");

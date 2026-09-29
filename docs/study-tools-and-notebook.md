@@ -14,7 +14,7 @@ The top toolbar contains Study material and Study Tools. Study Tools offers stud
 
 Generation does not move the reader's scroll position. The down-arrow button jumps to the bottom on request. History opens a searchable popup of saved conversations. Failed/stopped requests keep the user's question and can be retried. A selected passage can be attached using the fourth selection-toolbar action, Add to Chat.
 
-Requests require a signed-in account and explicit selected-context sharing. Device workspaces send the selected local material rather than looking up unrelated cloud note IDs. Folder requests cover all selected text up to 200,000 characters, split into bounded provider requests; larger selections receive an explicit error. Each section consumes the existing AI allowance. Hard cards require application and inference rather than giveaway topic names; generated sets can be reviewed, edited, and saved to Review.
+Requests require explicit selected-context sharing. Local material can be studied without signing in; private cloud material still requires authentication. Folder requests cover all selected text up to 200,000 characters, split into bounded provider requests; larger selections receive an explicit error. One study request consumes one request allowance and reserves processing capacity for every section before generation. The free default is 100 requests per UTC day, with additional processing and abuse limits; see [free-ai-chat.md](free-ai-chat.md). Hard cards require application and inference rather than giveaway topic names; generated sets can be reviewed, edited, and saved to Review.
 
 ## Code blocks
 

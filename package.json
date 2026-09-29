@@ -1,6 +1,6 @@
 {
   "name": "studyspace",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -43,11 +43,17 @@
     "@radix-ui/react-dropdown-menu": "latest",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "@univerjs/preset-sheets-core": "0.25.1",
+    "@univerjs/preset-sheets-filter": "0.25.1",
+    "@univerjs/preset-sheets-find-replace": "0.25.1",
+    "@univerjs/preset-sheets-sort": "0.25.1",
+    "@univerjs/presets": "0.25.1",
     "@yowasp/clang": "22.0.0-git20542-10",
     "dictionary-en": "4.0.0",
     "diff": "latest",
     "docx": "9.7.1",
     "dompurify": "3.4.15",
+    "exceljs": "4.4.0",
     "fast-xml-parser": "latest",
     "fflate": "latest",
     "fuzzball": "2.2.6",
@@ -76,6 +82,7 @@
     "retext-indefinite-article": "5.0.0",
     "retext-repeated-words": "5.0.0",
     "retext-stringify": "4.0.0",
+    "rxjs": "7.8.2",
     "sql.js": "1.14.2",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2",
@@ -100,6 +107,7 @@
     "@types/sql.js": "1.4.11",
     "@types/turndown": "5.0.6",
     "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
     "prettier": "^3.9.6",
     "tsx": "latest",
     "typescript": "latest",
@@ -107,5 +115,11 @@
   },
   "engines": {
     "node": ">=24.11.1 <25"
+  },
+  "overrides": {
+    "nanoid": "5.1.16",
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

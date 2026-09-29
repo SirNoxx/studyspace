@@ -56,7 +56,11 @@ import {
 import { conceptMatches, definitionLinks } from "@/lib/markdown";
 import type { Definition, Attachment } from "@/lib/model";
 import { findAttachment } from "@/lib/attachments";
-import { EditorImage } from "./EditorImage";
+import { EditorImage, imageDropHandlers } from "./EditorImage";
+import { taskListExtension, insertTaskShortcut } from "./EditorTasks";
+import { headingFoldExtension } from "./EditorHeadingFolds";
+import type { AttachmentPlacement } from "@/lib/attachment-placement";
+import { formatClipboard } from "@/lib/clipboard-formatting";
 export interface EditorHandle {
   insert: (text: string) => void;
   wrap: (left: string, right: string) => void;
@@ -98,7 +102,7 @@ export default function Editor({
   onSelection: (text: string) => void;
   definitions: Definition[];
   onDefinition: (id: string) => void;
-  onAttach: (files: File[]) => void;
+  onAttach: (files: File[], placement?: AttachmentPlacement) => void;
   handle: React.MutableRefObject<EditorHandle | null>;
   notes: { id: string; title: string }[];
   attachments: Attachment[];
@@ -218,13 +222,18 @@ export default function Editor({
                       from: node.from,
                       to: node.to,
                       value: Decoration.replace({
-                        widget: new EditorImage(asset, demo),
+                        widget: new EditorImage(
+                          asset,
+                          demo,
+                          v.state.selection.main.from === node.from &&
+                            v.state.selection.main.to === node.to,
+                        ),
                       }),
                     });
                     return false;
                   }
                 }
-                if (/^ATXHeading[1-6]$/.test(node.name))
+                if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name))
                   marks.push({
                     from: node.from,
                     to: node.to,
@@ -324,7 +333,10 @@ export default function Editor({
     );
     return [
       visual,
-      ...(modeRef.current === "live" ? [embeddedBlocks.current!] : []),
+      headingFoldExtension,
+      ...(modeRef.current === "live"
+        ? [embeddedBlocks.current!, taskListExtension]
+        : []),
     ];
   };
   useEffect(() => {
@@ -346,7 +358,15 @@ export default function Editor({
           bracketMatching(),
           closeBrackets(),
           markdown({ base: markdownLanguage }),
-          syntaxHighlighting(defaultHighlightStyle),
+          syntaxHighlighting(
+            HighlightStyle.define(
+              defaultHighlightStyle.specs.map((spec) =>
+                spec.tag === tags.heading
+                  ? { ...spec, textDecoration: "none", fontWeight: "700" }
+                  : spec,
+              ),
+            ),
+          ),
           syntaxHighlighting(
             HighlightStyle.define([
               {
@@ -374,6 +394,7 @@ export default function Editor({
             ],
           }),
           keymap.of([
+            { key: "Space", run: insertTaskShortcut },
             {
               key: "Enter",
               run: (editor) => {
@@ -467,6 +488,7 @@ export default function Editor({
               callbacks.current.onSelection(u.state.sliceDoc(s.from, s.to));
             }
           }),
+          imageDropHandlers,
           EditorView.domEventHandlers({
             click: (e) => {
               const id = (e.target as HTMLElement)
@@ -475,10 +497,14 @@ export default function Editor({
               if (id) callbacks.current.onDefinition(id);
             },
             paste: (e, editor) => {
+              if (editor.state.readOnly) return false;
               const files = Array.from(e.clipboardData?.files ?? []);
               if (files.length) {
                 e.preventDefault();
-                callbacks.current.onAttach(files);
+                callbacks.current.onAttach(files, {
+                  body: editor.state.doc.toString(),
+                  position: editor.state.selection.main.head,
+                });
                 return true;
               }
               const text = e.clipboardData?.getData("text/plain").trim();
@@ -509,13 +535,74 @@ export default function Editor({
                   return false;
                 }
               }
-              return false;
+              const plain = e.clipboardData?.getData("text/plain") ?? "";
+              const html = e.clipboardData?.getData("text/html") ?? "";
+              const range = editor.state.selection.main;
+              const tree = ensureSyntaxTree(editor.state, range.to, 50);
+              if (!tree) return false;
+              for (
+                let node = tree.resolveInner(range.from, -1);
+                node;
+                node = node.parent!
+              ) {
+                if (
+                  [
+                    "FencedCode",
+                    "CodeBlock",
+                    "CodeText",
+                    "InlineCode",
+                  ].includes(node.name)
+                )
+                  return false;
+              }
+              try {
+                let formatted = formatClipboard(plain, html);
+                if (!formatted || formatted === plain) return false;
+                // A pasted block must not join the middle of an existing paragraph.
+                if (/\n|^#{1,6} /.test(formatted)) {
+                  if (
+                    editor.state
+                      .sliceDoc(
+                        editor.state.doc.lineAt(range.from).from,
+                        range.from,
+                      )
+                      .trim()
+                  )
+                    formatted = "\n\n" + formatted;
+                  if (
+                    editor.state
+                      .sliceDoc(range.to, editor.state.doc.lineAt(range.to).to)
+                      .trim()
+                  )
+                    formatted += "\n\n";
+                }
+                e.preventDefault();
+                editor.dispatch({
+                  changes: {
+                    from: range.from,
+                    to: range.to,
+                    insert: formatted,
+                  },
+                  selection: { anchor: range.from + formatted.length },
+                  userEvent: "input.paste",
+                  scrollIntoView: true,
+                });
+                return true;
+              } catch {
+                // Malformed clipboard data still pastes through the editor as plain text.
+                return false;
+              }
             },
-            drop: (e) => {
+            drop: (e, editor) => {
               const files = Array.from(e.dataTransfer?.files ?? []);
               if (files.length) {
                 e.preventDefault();
-                callbacks.current.onAttach(files);
+                callbacks.current.onAttach(files, {
+                  body: editor.state.doc.toString(),
+                  position:
+                    editor.posAtCoords({ x: e.clientX, y: e.clientY }) ??
+                    editor.state.selection.main.head,
+                });
                 return true;
               }
               return false;
@@ -711,6 +798,7 @@ export default function Editor({
       )}
       <div
         className={"editor-host mode-" + mode}
+        data-note-id={id}
         ref={parent}
         onContextMenu={(event) => {
           if ((event.target as HTMLElement).closest(".code-cell-widget"))

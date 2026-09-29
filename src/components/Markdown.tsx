@@ -17,11 +17,16 @@ import {
   conceptMatcher,
   proseRanges,
   resolveLink,
+  compactTaskLists,
 } from "@/lib/markdown";
 import type { Definition, Attachment, Note } from "@/lib/model";
 import AttachmentMedia, { findAttachment } from "./AttachmentMedia";
+import Picture from "./Picture";
+import { pictureSource } from "@/lib/picture-source";
 import Whiteboard from "./Whiteboard";
 import NoteModule from "./NoteModule";
+import ReadingHeadingSection from "./ReadingHeadingSection";
+import { readingHeadingSections } from "@/lib/heading-sections";
 function titledBlocks() {
   return (tree: any) =>
     visit(tree, "code", (node: any) => {
@@ -91,6 +96,8 @@ export default function Markdown({
   onAIReference,
   publicAssetBase,
   notes = [],
+  collapsibleHeadings = false,
+  onBodyChange,
 }: {
   body: string;
   definitions?: Definition[];
@@ -106,6 +113,8 @@ export default function Markdown({
   onAIReference?: (id: string) => void;
   publicAssetBase?: string;
   notes?: Pick<Note, "id" | "title" | "body" | "originalPath" | "metadata">[];
+  collapsibleHeadings?: boolean;
+  onBodyChange?: (next: string, previous: string) => void;
 }) {
   const match = conceptMatcher(definitions);
   const noteTerms = new Set<string>();
@@ -201,12 +210,16 @@ export default function Markdown({
         urlTransform={(url) =>
           url.startsWith("attachment:") ? url : defaultUrlTransform(url)
         }
-        remarkPlugins={[remarkGfm, remarkMath, titledBlocks]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={[remarkGfm, remarkMath, compactTaskLists, titledBlocks]}
+        rehypePlugins={[rehypeKatex, ...(collapsibleHeadings ? [readingHeadingSections] : [])]}
         components={{
+          section: ({node, children, ...props}) => node?.properties.dataHeadingSection
+            ? <ReadingHeadingSection>{children}</ReadingHeadingSection>
+            : <section {...props}>{children}</section>,
           input: ({ checked }) => (
             <input
               type="checkbox"
+              className="note-task-circle"
               checked={checked}
               readOnly
               disabled
@@ -339,7 +352,9 @@ export default function Markdown({
               </a>
             );
           },
-          img: ({ src, alt }) => {
+          img: ({ src, alt, node }) => {
+            const range = onBodyChange ? pictureSource(body, transformed, node?.position?.start.offset, node?.position?.end.offset) : undefined;
+            const remove = range && onBodyChange ? () => onBodyChange(body.slice(0, range.from) + body.slice(range.to), body) : undefined;
             const asset =
               typeof src === "string"
                 ? findAttachment(attachments, src, fromPath)
@@ -351,6 +366,7 @@ export default function Markdown({
                   demo={demo}
                   publicBase={publicAssetBase}
                   image
+                  onDelete={remove}
                 >
                   {alt}
                 </AttachmentMedia>
@@ -359,11 +375,10 @@ export default function Markdown({
               (src.startsWith("blob:") ||
                 src.startsWith("/api/attachments/") ||
                 remoteImages) ? (
-              <img
+              <Picture
                 src={src}
                 alt={alt ?? ""}
-                loading="lazy"
-                referrerPolicy="no-referrer"
+                onDelete={remove}
               />
             ) : (
               <span className="image-placeholder">

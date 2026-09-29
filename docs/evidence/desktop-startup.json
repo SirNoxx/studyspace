@@ -5,18 +5,18 @@
   },
   "scenarios": {
     "normal": {
-      "appReadyMs": 72,
-      "windowCreatedMs": 151,
-      "loadingPageMs": 405,
-      "localServerReadyMs": 2449,
-      "workspaceLoadedMs": 3215
+      "appReadyMs": 55,
+      "windowCreatedMs": 120,
+      "loadingPageMs": 214,
+      "localServerReadyMs": 1534,
+      "workspaceLoadedMs": 2336
     },
     "slow": {
-      "appReadyMs": 54,
-      "windowCreatedMs": 126,
-      "loadingPageMs": 236,
-      "localServerReadyMs": 6296,
-      "workspaceLoadedMs": 6782
+      "appReadyMs": 68,
+      "windowCreatedMs": 133,
+      "loadingPageMs": 235,
+      "localServerReadyMs": 6291,
+      "workspaceLoadedMs": 6779
     },
     "closeDuringStartup": "Closed cleanly before starting the server",
     "portConflict": "Visible, closable error screen",

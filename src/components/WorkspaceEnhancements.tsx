@@ -347,6 +347,7 @@ export function HyperlinkDialog({
             to: origin.range?.to,
             body: origin.body,
             reading: dialog.reading,
+            moduleReplace: dialog.moduleReplace,
           }}
           onClose={onClose}
         />
@@ -355,12 +356,12 @@ export function HyperlinkDialog({
           onSubmit={(e) => {
             e.preventDefault();
             try {
-              if (
+              if (typeof dialog.moduleReplace !== "function" && (
                 !ctx.active ||
                 ctx.active.id !== origin.noteId ||
                 ctx.active.revision !== origin.revision ||
                 !origin.range
-              )
+              ))
                 throw Error("The note changed. Select the passage again.");
               if (!text.trim()) throw Error("Enter meaningful link text.");
               let link: string;
@@ -382,7 +383,12 @@ export function HyperlinkDialog({
                       .replace(/[\\`*_[\]<>]/g, "\\$&")
                       .replace(/[\r\n]+/g, " ");
               }
-              const range = origin.range;
+              if (typeof dialog.moduleReplace === "function") {
+                if (!dialog.moduleReplace(link)) throw Error("The module text changed. Select it again.");
+                onClose();
+                return;
+              }
+              const range = origin.range!;
               ctx.mutate((w) => {
                 const n = w.notes.find((n) => n.id === origin.noteId)!;
                 saveNote(
