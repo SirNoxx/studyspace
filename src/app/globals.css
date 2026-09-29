@@ -941,8 +941,9 @@ svg {
   scrollbar-width: thin;
 }
 .document {
-  padding: 42px clamp(24px, 5vw, 67px) 20px;
-  max-width: 930px;
+  padding: 42px 0 20px;
+  width: 90%;
+  max-width: none;
   margin: 0 auto;
 }
 .document.full-width {
@@ -1146,7 +1147,6 @@ input.note-title {
 }
 .zen .document {
   padding-top: 45px;
-  max-width: 960px;
 }
 .zen .private-label {
   display: none;
@@ -3592,10 +3592,6 @@ input.note-title {
   .inspector {
     width: 285px;
   }
-  .document {
-    padding-left: 35px;
-    padding-right: 35px;
-  }
   .explorer {
     width: 246px;
   }
@@ -3642,10 +3638,6 @@ input.note-title {
   }
   .inspector {
     width: 310px;
-  }
-  .document {
-    padding-left: 42px;
-    padding-right: 42px;
   }
   .settings-layout {
     grid-template-columns: 115px 1fr;
@@ -3741,7 +3733,7 @@ input.note-title {
     min-width: 0;
   }
   .document {
-    padding: 28px 25px 20px;
+    padding: 28px 0 20px;
   }
   .note-title {
     font-size: 31px !important;
@@ -4075,7 +4067,7 @@ input.note-title {
     font-size: 11px;
   }
   .zen .document {
-    padding: 30px 25px;
+    padding: 30px 0;
   }
   .zen .mobile-create {
     display: none;
@@ -4522,7 +4514,7 @@ textarea,
 .side-note-modes { display: flex; gap: 6px; padding: 8px 12px; }
 .side-note-modes button { padding: 4px 8px; border-radius: 5px; font-size: 11px; }
 .side-note-modes button[aria-pressed=true] { background: var(--hover); color: var(--accent); }
-.side-note-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px; }
+.side-note-scroll { flex: 1; min-height: 0; overflow: auto; padding: 24px 5%; }
 .side-note-title { width: 100%; font: inherit; font-size: 26px; font-weight: 600; background: transparent; border: 0; margin-bottom: 24px; color: var(--text); }
 .chat-reading-region { position: relative; flex: 1; min-height: 0; display: flex; }
 .chat-conversation { overflow-anchor: none; padding-bottom: 44px; }
@@ -4553,7 +4545,7 @@ textarea,
 .code-cell-editor .cm-line { padding: 0 12px !important; }
 .code-cell-editor .cm-gutters { display: flex !important; }
 .code-cell-editor .cm-scroller { font-family: Consolas, ui-monospace, monospace !important; line-height: 1.6; }
-.workspace-panes.is-split .document { padding-left: 24px; padding-right: 24px; }
+.workspace-panes.is-split .document { padding-inline: 0; }
 .chat-study-controls { grid-template-columns: minmax(0, 1fr) auto; overflow: visible; max-height: none; }
 .chat-tools-menu { display: flex; align-items: flex-end; padding-bottom: 0; }
 .chat-tools-menu > button { white-space: nowrap; height: 34px; display: flex; align-items: center; gap: 8px; }

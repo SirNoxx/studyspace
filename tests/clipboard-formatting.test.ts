@@ -22,6 +22,14 @@ const tables = (text: string) =>
     .map((b) => JSON.parse(b.code));
 
 describe("clipboard formatting", () => {
+  it("converts rich checklist brackets without leaking Turndown escape characters", () => {
+    const result = formatClipboard("", "<h1>12. Validate the experience</h1><ul><li><p>[ ] Recruit creators</p></li><li><p>[ ] Verify a complete journey</p></li></ul>");
+    expect(result).toContain("- [ ] Recruit creators");
+    expect(result).toContain("- [ ] Verify a complete journey");
+    expect(result).not.toMatch(/\\\[|\\\]/);
+    expect(formatPastedMarkdown("[ ] First\n[] Second\n-[] Third")).toBe("- [ ] First\n- [ ] Second\n- [ ] Third");
+    expect(formatClipboard("", "<ul><li>[] Compact</li></ul>")).toBe("- [ ] Compact");
+  });
   it("keeps paragraphs and lists inside their original rich table cells", () => {
     const result = formatClipboard(
       "broken fallback",

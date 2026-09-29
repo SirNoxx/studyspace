@@ -7,6 +7,7 @@ import { gfm } from "turndown-plugin-gfm";
 import DOMPurify from "dompurify";
 import { moduleSchema } from "./modules";
 import { codeFence } from "./code-blocks";
+import { normalizeTaskLists } from "./task-lists";
 
 const parser = unified().use(remarkParse).use(remarkGfm);
 
@@ -48,6 +49,7 @@ function tableData(table: Table, markdown: string) {
 
 /** Only top-level prose tables become modules; code and quoted examples stay literal. */
 export function formatPastedMarkdown(markdown: string) {
+  markdown = normalizeTaskLists(markdown);
   if (markdown.length > 1_000_000 || !markdown.includes("|")) return markdown;
   const tree = parser.parse(markdown);
   const changes: { from: number; to: number; text: string }[] = [];
@@ -162,7 +164,8 @@ export function formatClipboard(plain: string, html: string) {
         },
       });
       const converted = converter.turndown(container);
-      if (converted.trim()) markdown = converted;
+      // These escapes were introduced by HTML conversion, not by the author.
+      if (converted.trim()) markdown = normalizeTaskLists(converted, true);
     }
   }
   return formatPastedMarkdown(markdown);

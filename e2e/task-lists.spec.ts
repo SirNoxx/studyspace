@@ -1,5 +1,51 @@
 import { test, expect } from "@playwright/test";
 
+test("rich paste and already saved bare or escaped checklist lines become usable tasks", async ({page}) => {
+  await page.goto("/demo?sample=1");
+  const editor = page.getByRole("textbox", {name:"Markdown editor", exact:true});
+  await editor.fill("[ ] Recruit creators\n[] Review work\n-[] Ship update\n\n- \\[ \\] Validate accounts");
+  await expect(editor.getByRole("checkbox")).toHaveCount(4);
+  await editor.getByRole("checkbox",{name:"Validate accounts",exact:true}).check();
+  await page.getByRole("button",{name:"Source",exact:true}).click();
+  await expect(editor).toContainText("- [x] Validate accounts");
+  await editor.fill("");
+  await page.getByRole("button",{name:"Live preview",exact:true}).click();
+  await editor.evaluate(element => {
+    const data = new DataTransfer();
+    data.setData("text/plain", "12. Validate the experience\n[ ] Recruit creators\n[ ] Verify a complete journey");
+    data.setData("text/html", "<h1>12. Validate the experience</h1><ul><li><p>[ ] Recruit creators</p></li><li><p>[ ] Verify a complete journey</p></li></ul>");
+    element.dispatchEvent(new ClipboardEvent("paste",{clipboardData:data,bubbles:true,cancelable:true}));
+  });
+  await expect(editor.getByRole("checkbox")).toHaveCount(2);
+  await editor.getByRole("checkbox",{name:"Recruit creators",exact:true}).check();
+  await page.getByRole("button",{name:"Source",exact:true}).click();
+  await expect(editor).not.toContainText("\\[");
+  await expect(editor).not.toContainText("\\]");
+  await expect(editor).toContainText("- [x] Recruit creators");
+  await page.getByRole("button",{name:"Reading",exact:true}).click();
+  await expect(page.locator(".writing-area").getByRole("checkbox")).toHaveCount(2);
+  await expect(page.locator(".writing-area").getByRole("checkbox").first()).toBeChecked();
+  await page.getByRole("button",{name:"Live preview",exact:true}).click();
+  await expect(page.locator(".save-state")).toContainText("Saved on this device");
+  await page.reload();
+  await expect(editor.getByRole("checkbox").first()).toBeChecked();
+});
+
+test("notes use ninety percent of the available pane with equal margins", async ({page}) => {
+  await page.goto("/demo?sample=1");
+  await expect(page.locator(".document")).toBeVisible();
+  for (const width of [1920, 1200, 800, 390]) {
+    await page.setViewportSize({width,height:1000});
+    const size = await page.locator(".document").evaluate(el => {
+      const parent=el.parentElement!, rect=el.getBoundingClientRect(), outer=parent.getBoundingClientRect(), style=getComputedStyle(el);
+      return {ratio:rect.width/parent.clientWidth, left:rect.left-outer.left, right:outer.left+parent.clientWidth-rect.right, padding:parseFloat(style.paddingLeft)+parseFloat(style.paddingRight)};
+    });
+    expect(size.ratio).toBeCloseTo(.9,2);
+    expect(Math.abs(size.left-size.right)).toBeLessThan(2);
+    expect(size.padding).toBe(0);
+  }
+});
+
 test("all Space shortcuts create circular task controls", async ({ page }) => {
   await page.goto("/demo?sample=1");
   const editor = page.getByRole("textbox", { name: "Markdown editor", exact: true });

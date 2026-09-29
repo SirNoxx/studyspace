@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { visit } from "unist-util-visit";
 import type { Definition } from "./model";
+import { normalizeTaskLists } from "./task-lists";
 import {publicSpreadsheetPreviews} from './spreadsheets/references';
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
 /** Accept the compact task shorthand in reading views as well as the editor. */
@@ -250,11 +251,11 @@ export function publicMarkdown(
   return safe.replace(/<[^>]*>/g, "");
 }
 export function readingMarkdown(body: string) {
-  return body
+  return normalizeTaskLists(body
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
     .replace(/%%[\s\S]*?%%/g, "")
     .replace(/^>\s*\[!(\w+)\]([^\n]*)/gm, "> **$1$2**")
-    .replace(/==([^=\n]+)==/g, "**$1**");
+    .replace(/==([^=\n]+)==/g, "**$1**"));
 }
 export function resolveLink(
   target: string,

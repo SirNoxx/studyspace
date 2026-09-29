@@ -1,5 +1,6 @@
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { taskPrefix } from "@/lib/task-lists";
 import {
   Decoration,
   EditorView,
@@ -49,7 +50,7 @@ export function insertTaskShortcut(view: EditorView) {
   return true;
 }
 
-/** Only real Markdown list items qualify; code examples remain untouched. */
+/** Include imported bare/escaped task lines; code examples remain untouched. */
 export function taskMarkers(
   state: EditorState,
   from = 0,
@@ -61,28 +62,31 @@ export function taskMarkers(
     marker: string;
     checked: boolean;
     label: string;
+    canonical: string;
   }[] = [];
-  syntaxTree(state).iterate({
-    from,
-    to,
-    enter(node) {
-      if (["FencedCode", "CodeBlock"].includes(node.name)) return false;
-      if (node.name !== "ListItem") return;
-      const line = state.doc.lineAt(node.from);
-      const text = state.sliceDoc(node.from, line.to);
-      const match = /^(?:[-+*]|\d+[.)])[\t ]+\[([ xX]?)\](?=[\t ]|$)/.exec(
-        text,
-      );
-      if (!match) return;
+  const tree = syntaxTree(state);
+  const frontmatter = state.doc.toString().match(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/)?.[0].length ?? 0;
+  for (let number = state.doc.lineAt(from).number; number <= state.doc.lineAt(to).number; number++) {
+      const line = state.doc.line(number);
+      const indent = /^[\t ]*(?:>[\t ]*)*/.exec(line.text)![0].length;
+      const start = line.from + indent;
+      const text = line.text.slice(indent);
+      const match = taskPrefix(text);
+      if (!match || start < frontmatter) continue;
+      let excluded = false;
+      for (let node = tree.resolveInner(start + match.marker.length, -1); node; node = node.parent!) {
+        if (["FencedCode", "CodeBlock", "InlineCode", "HTMLBlock", "Link", "Image", "LinkReference"].includes(node.name)) excluded = true;
+      }
+      if (excluded) continue;
       tasks.push({
-        from: node.from,
-        to: node.from + match[0].length,
-        marker: match[0],
-        checked: /x/i.test(match[1]),
-        label: text.slice(match[0].length).trim() || "Untitled task",
+        from: start,
+        to: start + match.marker.length,
+        marker: match.marker,
+        canonical: match.canonical,
+        checked: match.checked,
+        label: text.slice(match.marker.length).trim() || "Untitled task",
       });
-    },
-  });
+  }
   return tasks;
 }
 
@@ -124,9 +128,9 @@ class TaskCheckbox extends WidgetType {
       // Change only the marker, preserving the task text, indentation and selection.
       view.dispatch({
         changes: {
-          from: from + marker.indexOf("["),
+          from,
           to,
-          insert: input.checked ? "[x]" : "[ ]",
+          insert: this.task.canonical.replace(/\[[ xX]\]$/, input.checked ? "[x]" : "[ ]"),
         },
         userEvent: "input.task",
       });

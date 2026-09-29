@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { taskMarkers, taskShortcut } from "../src/components/EditorTasks";
+import { normalizeTaskLists } from "../src/lib/task-lists";
 
 const tasks = (doc: string) =>
   taskMarkers(
@@ -12,6 +13,24 @@ const tasks = (doc: string) =>
   );
 
 describe("note task lists", () => {
+  it("renders already saved bare and escaped checklists without requiring a reimport", () => {
+    const doc = "[ ] Recruit creators\n[] Review work\n-[] Ship update\n\n- \\[ \\] Validate accounts\n- \\[x\\] Completed\n";
+    const result = tasks(doc);
+    expect(result.map(t => [t.label, t.checked])).toEqual([
+      ["Recruit creators", false], ["Review work", false], ["Ship update", false],
+      ["Validate accounts", false], ["Completed", true],
+    ]);
+    for (const task of result) expect(doc.slice(task.from, task.to)).toBe(task.marker);
+    expect(normalizeTaskLists(doc)).toBe("- [ ] Recruit creators\n- [ ] Review work\n- [ ] Ship update\n\n- [ ] Validate accounts\n- [x] Completed\n");
+  });
+  it("normalizes long imported checklists but protects code, links and frontmatter", () => {
+    const protectedText = "---\n[ ] frontmatter\n---\n\n```md\n[ ] code\n- \\[ \\] code\n```\n\n    [ ] indented code\n\n`[ ] inline code`\n\n[ ](/link)\n\nText [ ] prose\n\n- \\[\\] Literal brackets\n\n";
+    const list = Array.from({length: 500}, (_,i) => `[ ] Task ${i}`).join("\r\n");
+    const normalized = normalizeTaskLists(protectedText + list);
+    expect(normalized).toBe(protectedText + list.replace(/^\[ \]/gm, "- [ ]"));
+    expect(normalizeTaskLists(normalized)).toBe(normalized);
+    expect(tasks(protectedText)).toHaveLength(0);
+  });
   it("expands each Space shortcut and preserves following text and indentation", () => {
     for (const prefix of [
       "[]",
