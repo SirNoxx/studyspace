@@ -198,6 +198,15 @@ export default function Auth() {
             <ArrowRight size={16} />
           </button>
         </form>
+        {mode !== "reset" && <button className="secondary" disabled={busy} onClick={async()=>{
+          setBusy(true);setMessage("");
+          try {
+            const raw=new URLSearchParams(location.search).get("next");
+            const next=raw?.startsWith("/") && !raw.startsWith("//") ? raw : "/w";
+            const {error}=await browserClient().auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+"/auth/callback?next="+encodeURIComponent(next)}});
+            if(error)throw error;
+          }catch(e){setMessage((e as Error).message);}finally{setBusy(false);}
+        }}>Continue with Google</button>}
         <p role="status">{message}</p>
         <div className="auth-actions">
           <button

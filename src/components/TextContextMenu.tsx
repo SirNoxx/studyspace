@@ -12,10 +12,13 @@ import {
   Code2,
 } from "lucide-react";
 import type { EditorHandle } from "./Editor";
+import SpellingSuggestions from "./SpellingSuggestions";
+import { isSpellingWord } from "@/lib/spelling";
 
 export default function TextContextMenu({
   editor,
   reading,
+  shared = false,
   onDictionary,
   onCard,
   onLink,
@@ -23,6 +26,7 @@ export default function TextContextMenu({
 }: {
   editor: React.RefObject<EditorHandle | null>;
   reading: boolean;
+  shared?: boolean;
   onDictionary: (text: string) => void;
   onCard: (text: string) => void;
   onLink: (text: string) => void;
@@ -47,6 +51,8 @@ export default function TextContextMenu({
   useEffect(() => {
     const open = (event: MouseEvent | KeyboardEvent) => {
       if (!(event.target instanceof Element)) return;
+      if (!!event.target.closest(".shared-workspace-overlay") !== shared)
+        return;
       if (
         !event.target.closest(".writing-area") &&
         !(
@@ -56,8 +62,21 @@ export default function TextContextMenu({
         )
       )
         return;
+      if (event.target.closest(".code-cell-widget")) return;
       const native = window.getSelection();
       const range = native?.rangeCount ? native.getRangeAt(0) : null;
+      if (
+        "clientX" in event &&
+        range &&
+        !Array.from(range.getClientRects()).some(
+          (rect) =>
+            event.clientX >= rect.left &&
+            event.clientX <= rect.right &&
+            event.clientY >= rect.top &&
+            event.clientY <= rect.bottom,
+        )
+      )
+        return;
       const parent = range?.commonAncestorContainer.parentElement;
       const text = reading
         ? parent?.closest(".writing-area")
@@ -199,13 +218,22 @@ export default function TextContextMenu({
         }
       }}
     >
+      {!reading && isSpellingWord(context.text) && (
+        <SpellingSuggestions
+          word={context.text}
+          onAccept={() => action(() => editor.current?.focus())}
+          onReplace={(suggestion) =>
+            action(() => replaceAfterClipboard(suggestion))
+          }
+        />
+      )}
       <button
         role="menuitem"
         className="menu-item"
         onClick={() => action(() => onLink(context.text))}
       >
         <Link2 size={15} />
-        Insert / edit link
+        Insert or edit link / definition
       </button>
       <div role="separator" className="menu-separator" />
       <button
@@ -214,7 +242,7 @@ export default function TextContextMenu({
         onClick={() => action(() => onDictionary(context.text))}
       >
         <BookA size={15} />
-        Add to dictionary
+        Create definition
       </button>
       <button
         role="menuitem"

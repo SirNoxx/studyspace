@@ -5,6 +5,7 @@ import { emptyWorkspace, uid, type Workspace } from "@/lib/model";
 import { localDB, loadLocal } from "@/lib/store";
 import type { AppContext } from "./WorkspaceApp";
 import { Field, Modal } from "./ui";
+import {recoverCloudWorkspace} from "@/lib/cloud-recovery";
 
 export default function WorkspaceManager({
   ctx,
@@ -150,6 +151,7 @@ export default function WorkspaceManager({
         </p>
       </form>
       {error && <p role="alert">{error}</p>}
+      {ctx.cloudAccount && <section className="social-card"><h3>Previous cloud notes</h3><p>Bring notes and attachments from the previous cloud workspace onto this device. The cloud originals remain available for recovery.</p><button disabled={busy} onClick={async()=>{setBusy(true);setError("");try{await open(await recoverCloudWorkspace(ctx.cloudAccount!.id));}catch(e){setError((e as Error).message);setBusy(false);}}}>{busy?"Recovering…":"Recover previous cloud notes"}</button></section>}
     </Modal>
   );
 }

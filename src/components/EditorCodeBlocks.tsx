@@ -17,6 +17,8 @@ import {
 import CodeCell from "./CodeCell";
 import Whiteboard from "./Whiteboard";
 import NoteModule from "./NoteModule";
+import DiagramBlock from "./DiagramBlock";
+import type {PDFAssetContext} from "@/lib/pdf-assets";
 
 const roots = new WeakMap<HTMLElement, Root>();
 const observers = new WeakMap<HTMLElement, ResizeObserver>();
@@ -29,6 +31,7 @@ class CodeWidget extends WidgetType {
       block: StudyCodeBlock,
     ) => void,
     readonly heights: Map<string, number>,
+    readonly pdfAssets?: ()=>PDFAssetContext,
   ) {
     super();
   }
@@ -39,12 +42,14 @@ class CodeWidget extends WidgetType {
     return this.heights.get(this.block.id) ?? -1;
   }
   render(dom: HTMLElement, view: EditorView) {
+    dom.dataset.blockId = this.block.id;
     let root = roots.get(dom);
     if (!root) {
       root = createRoot(dom);
       roots.set(dom, root);
     }
     const onChange = (patch: Partial<StudyCodeBlock>) => {
+      if(view.state.readOnly || !view.state.facet(EditorView.editable))return;
       // Replacing the Markdown fence invalidates CodeMirror's measured range.
       // Keep its real height so a tall, focused widget stays in the viewport.
       this.heights.set(this.block.id, dom.getBoundingClientRect().height);
@@ -66,6 +71,7 @@ class CodeWidget extends WidgetType {
       );
       if (!current) return;
       if (action === "delete") {
+        if(view.state.readOnly || !view.state.facet(EditorView.editable))return;
         view.dispatch({
           changes: { from: current.from, to: current.to, insert: "" },
           selection: { anchor: current.from },
@@ -77,8 +83,10 @@ class CodeWidget extends WidgetType {
       else this.onBlockAction(action, current);
     };
     root.render(
-      this.block.language === "module" ? (
-        <NoteModule block={this.block} onChange={onChange} onAction={action} />
+      this.block.language === "mermaid" ? (
+        <DiagramBlock block={this.block} onChange={onChange} onDelete={() => action("delete")} readOnly={view.state.readOnly || !view.state.facet(EditorView.editable)} />
+      ) : this.block.language === "module" ? (
+        <NoteModule block={this.block} onChange={onChange} onAction={action} pdfAssets={this.pdfAssets?.()} readOnly={view.state.readOnly || !view.state.facet(EditorView.editable)} />
       ) : this.block.language === "whiteboard" ? (
         <Whiteboard block={this.block} onChange={onChange} onAction={action} />
       ) : (
@@ -133,13 +141,14 @@ class CodeWidget extends WidgetType {
 export function codeBlockExtension(
   onChat: (text: string) => void,
   onBlockAction: (action: BlockAction, block: StudyCodeBlock) => void,
+  pdfAssets?: ()=>PDFAssetContext,
 ) {
   const heights = new Map<string, number>();
   const build = (state: EditorState) =>
     Decoration.set(
       studyCodeBlocks(state.doc.toString()).map((block) =>
         Decoration.replace({
-          widget: new CodeWidget(block, onChat, onBlockAction, heights),
+          widget: new CodeWidget(block, onChat, onBlockAction, heights, pdfAssets),
           block: true,
         }).range(block.from, block.to),
       ),

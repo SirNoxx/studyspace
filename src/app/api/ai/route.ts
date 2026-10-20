@@ -1,26 +1,37 @@
 import { z } from "zod";
 import { streamStudyResponse } from "@/lib/server/ai-response";
 import { emptyWorkspace, now } from "@/lib/model";
-import { requireUser, adminClient, configured } from "@/lib/supabase/server";
+import { requireUser, configured } from "@/lib/supabase/server";
 import {
   loadWorkspace,
   assertSameOrigin,
   apiError,
 } from "@/lib/server/repository";
-import { buildAIContext, studyBatches } from "@/lib/server/ai";
+import { buildAIContext } from "@/lib/server/ai";
+import { reserveAI, studyCost, aiDailyLimit } from "@/lib/server/ai-quota";
 export const maxDuration = 120;
+export async function GET() {
+  return Response.json(
+    {
+      free: true,
+      dailyLimit: aiDailyLimit(),
+      resets: "UTC midnight",
+      configured: Boolean(process.env.AI_API_KEY && process.env.AI_MODEL),
+    },
+    { headers: { "Cache-Control": "no-store" } },
+  );
+}
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    if (!configured())
-      return Response.json(
-        {
-          error:
-            "AI needs a signed-in Supabase workspace, AI_API_KEY, and AI_MODEL. Your notes remain fully usable without it.",
-        },
-        { status: 503 },
-      );
-    const { user } = await requireUser();
+    let user: { id: string } | undefined;
+    if (configured()) {
+      try {
+        user = (await requireUser()).user;
+      } catch (error) {
+        if ((error as Error).message !== "AUTH_REQUIRED") throw error;
+      }
+    }
     if (!process.env.AI_API_KEY || !process.env.AI_MODEL)
       return Response.json(
         {
@@ -97,9 +108,17 @@ export async function POST(request: Request) {
           return JSON.parse(raw);
         })(),
       );
+    if (!input.localContext && !user)
+      return Response.json(
+        {
+          error:
+            "Choose local study material to use free AI chat. Accessing a private cloud workspace requires sign-in.",
+        },
+        { status: 401 },
+      );
     const w = input.localContext
       ? emptyWorkspace()
-      : await loadWorkspace(user.id);
+      : await loadWorkspace(user!.id);
     if (input.localContext) {
       w.containers = input.localContext.containers.map((c) => ({
         ...c,
@@ -146,23 +165,44 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    for (const _batch of studyBatches(context)) {
-      const { data: allowed, error } = await adminClient().rpc(
-        "consume_quota",
+    let allowance;
+    try {
+      allowance = await reserveAI(request, user?.id, studyCost(input, context));
+    } catch {
+      return Response.json(
         {
-          p_owner: user.id,
-          p_bucket: "ai",
-          p_limit: Number(process.env.AI_DAILY_REQUEST_LIMIT ?? 30),
+          error:
+            "Free AI is temporarily unavailable while its usage controls are offline. Please try again later.",
+        },
+        { status: 503 },
+      );
+    }
+    if (!allowance.allowed) {
+      const retry = Math.max(
+        1,
+        Math.ceil((Date.parse(allowance.reset ?? "") - Date.now()) / 1000) ||
+          60,
+      );
+      const error =
+        allowance.reason === "burst"
+          ? "You're sending study requests quickly. Please wait a minute and try again."
+          : allowance.reason === "global"
+            ? "Today's free AI capacity has been used. Please try again after midnight UTC."
+            : allowance.reason === "processing"
+              ? "Your daily AI processing allowance has been reached. Large folders use more of this allowance. It resets at midnight UTC."
+              : allowance.reason === "network"
+                ? "This network has reached its daily free AI allowance. Please try again after midnight UTC."
+                : "Your daily free AI allowance has been reached. It resets at midnight UTC.";
+      return Response.json(
+        { error, reset: allowance.reset },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retry),
+            "Cache-Control": "no-store",
+          },
         },
       );
-      if (error || !allowed)
-        return Response.json(
-          {
-            error:
-              "Daily AI request allowance reached. Try again tomorrow; core notes remain available.",
-          },
-          { status: 429 },
-        );
     }
     const signal = AbortSignal.any([
       request.signal,
@@ -174,6 +214,9 @@ export async function POST(request: Request) {
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
+        "X-AI-Remaining": String(allowance.remaining ?? 0),
+        "X-AI-Daily-Limit": String(aiDailyLimit()),
+        "X-AI-Reset": allowance.reset ?? "",
       },
     });
   } catch (e) {

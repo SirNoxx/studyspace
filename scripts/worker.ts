@@ -1,11 +1,13 @@
 import { adminClient } from "../src/lib/supabase/server";
 import { executeJob } from "../src/lib/server/jobs";
 import { sweepStorage } from "../src/lib/server/maintenance";
+import { deliverEmails, emailConfigured } from "../src/lib/server/email";
 const db = adminClient(),
   workerId = process.env.WORKER_ID ?? "worker-" + process.pid;
 let stopping = false;
 let lastSweep = Date.now();
 let lastCommunitySweep = 0;
+let lastEmailSweep = 0;
 process.on("SIGINT", () => {
   stopping = true;
 });
@@ -14,6 +16,14 @@ process.on("SIGTERM", () => {
 });
 console.log(JSON.stringify({ event: "worker_started", workerId }));
 while (!stopping) {
+  if (emailConfigured() && Date.now() - lastEmailSweep > 30000) {
+    lastEmailSweep = Date.now();
+    try {
+      await deliverEmails();
+    } catch {
+      console.error(JSON.stringify({event:"email_queue_unavailable"}));
+    }
+  }
   if (
     Date.now() - lastCommunitySweep > 86400000 &&
     process.env.SOCIAL_ENABLED !== "false"

@@ -141,7 +141,7 @@ test("selected editor text has a keyboard and pointer context menu without dupli
   await expect(menu.getByRole("menuitem").first()).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(
-    menu.getByRole("menuitem", { name: "Add to dictionary" }),
+    menu.getByRole("menuitem", { name: "Create definition" }),
   ).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByLabel("Word or phrase")).toHaveValue(
@@ -201,7 +201,7 @@ test("reading context menu preserves the passage and stays inside a narrow viewp
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(900);
   expect(box.y + box.height).toBeLessThanOrEqual(700);
-  await menu.getByRole("menuitem", { name: "Add to dictionary" }).click();
+  await menu.getByRole("menuitem", { name: "Create definition" }).click();
   await expect(page.getByLabel("Word or phrase")).toHaveValue(
     "Remember this selected passage.",
   );

@@ -1,4 +1,7 @@
 import { formatJournalDate } from "./journal-date";
+import { syncModuleDefinitions } from "./module-definitions";
+import { learningSettingsSchema } from "./learning-schema";
+import { weeklyCheckupsSchema } from "./weekly-checkups";
 import { diffLines } from "diff";
 import { current, isDraft } from "immer";
 import {
@@ -19,6 +22,7 @@ import {
   localDate,
 } from "./model";
 import { captureLinks, identifySource, publicMarkdown } from "./markdown";
+import {workbookReferences} from './spreadsheets/references';
 export class DomainError extends Error {
   constructor(
     message: string,
@@ -28,6 +32,12 @@ export class DomainError extends Error {
   }
 }
 export function validateWorkspace(w: Workspace) {
+  if (w.settings.weeklyCheckups !== undefined && !weeklyCheckupsSchema.safeParse(w.settings.weeklyCheckups).success)
+    throw new DomainError("Weekly checkup data is invalid. Keep your recovery copy and restore a valid backup.");
+  if (!learningSettingsSchema.safeParse(w.settings).success)
+    throw new DomainError(
+      "Learning data is invalid. Keep your recovery copy and restore a valid backup.",
+    );
   if (
     w.schemaVersion !== 1 ||
     w.notes.length > 10000 ||
@@ -128,6 +138,7 @@ export function createNote(
   const existing = w.notes.find((x) => x.id === n.id);
   if (existing) return existing;
   w.notes.push(n);
+  syncModuleDefinitions(w, n);
   return n;
 }
 export function saveNote(
@@ -157,6 +168,7 @@ export function saveNote(
     });
   if (n.history.length > 100) n.history.shift();
   Object.assign(n, patch, { revision: n.revision + 1, updatedAt: now() });
+  syncModuleDefinitions(w, n);
   for (const a of w.annotations.filter((a) => a.noteId === id)) {
     a.state = n.body.includes(a.quote) ? "attached" : "changed";
   }
@@ -216,13 +228,17 @@ export function moveItems(w: Workspace, ids: string[], destination: string) {
     }
     const n = w.notes.find((n) => n.id === id);
     if (n) {
-      if(target.system!=="pinned"&&n.metadata)delete n.metadata.pinnedFrom;
+      if (target.system !== "pinned" && n.metadata)
+        delete n.metadata.pinnedFrom;
       n.containerId = destination;
       if (n.kind === "quick" && target.system !== "quick") n.kind = "note";
       n.updatedAt = now();
       reconcileSources(w, n);
     }
   }
+  for (const n of w.notes)
+    if (ids.some((id) => n.id === id || inContainer(w, n.containerId, id)))
+      syncModuleDefinitions(w, n);
   validateWorkspace(w);
 }
 export function trashItems(w: Workspace, ids: string[], restore = false) {
@@ -237,8 +253,10 @@ export function trashItems(w: Workspace, ids: string[], restore = false) {
         child.trashed = !restore;
     for (const n of w.notes.filter(
       (n) => n.id === id || (c && inContainer(w, n.containerId, id)),
-    ))
+    )) {
       n.trashed = !restore;
+      syncModuleDefinitions(w, n);
+    }
   }
 }
 export function duplicateItem(w: Workspace, id: string, destination?: string) {
@@ -411,6 +429,8 @@ export function prepareSnapshot(
 ): Snapshot {
   const selected = w.notes.filter((n) => ids.includes(n.id) && !n.trashed);
   if (!selected.length) throw new DomainError("Select at least one note.");
+  const missingPreview=selected.find(n=>workbookReferences(n.body).some(ref=>!ref.data.preview));
+  if(missingPreview)throw new DomainError(`Select a spreadsheet range and choose “Include selected values in note preview” in “${missingPreview.title}” before publishing.`);
   const selectedIds = new Set(selected.map((n) => n.id));
   const titles = new Set(selected.map((n) => n.title));
   const assets = new Set(

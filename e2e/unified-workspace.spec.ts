@@ -1,0 +1,33 @@
+import {test,expect} from "@playwright/test";
+import {Document,Paragraph,TextRun,Packer} from "docx";
+test("pasted links offer title and author, preserve manual edits, and save both in Markdown",async({page})=>{
+  await page.route("**/api/metadata",r=>r.fulfill({json:{title:"Fetched title",authors:["Fetched author"]}}));
+  await page.goto("/demo?sample=1");
+  const editor=page.getByRole("textbox",{name:"Markdown editor",exact:true});await editor.click();await editor.press("Control+End");
+  await editor.evaluate(el=>{const data=new DataTransfer();data.setData("text/plain","https://example.com/research");el.dispatchEvent(new ClipboardEvent("paste",{clipboardData:data,bubbles:true,cancelable:true}));});
+  const dialog=page.getByRole("dialog",{name:"Add a link",exact:true});await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Title",{exact:true}).fill("My research title");
+  await dialog.getByRole("button",{name:"Look up title and author",exact:true}).click();
+  await expect(dialog.getByLabel("Author (optional)")).toHaveValue("Fetched author");
+  await expect(dialog.getByLabel("Title",{exact:true})).toHaveValue("My research title");
+  await dialog.getByLabel("Author (optional)").fill("Ada Example");await dialog.getByRole("button",{name:"Add link",exact:true}).click();
+  await page.getByRole("button",{name:"Source",exact:true}).click();
+  await expect(editor).toContainText("[My research title](https://example.com/research) — Ada Example");
+});
+test("Word and PDF imports create editable Markdown, and a note exports as Word",async({page,browser})=>{
+  test.setTimeout(90000);
+  const word=await Packer.toBuffer(new Document({sections:[{children:[new Paragraph({children:[new TextRun({text:"Word conversion fixture",bold:true})]}),new Paragraph("A paragraph about active recall.")]}]}));
+  const pdfPage=await browser.newPage();await pdfPage.setContent("<h1>PDF conversion fixture</h1><p>Retrieval practice strengthens memory.</p>");const pdf=await pdfPage.pdf();await pdfPage.close();
+  await page.goto("/demo?sample=1");await page.getByRole("button",{name:"Import notes",exact:true}).click();
+  await page.locator("input[type=file][accept]").setInputFiles([{name:"Word-study.docx",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",buffer:word},{name:"PDF-study.pdf",mimeType:"application/pdf",buffer:pdf}]);
+  await page.getByRole("button",{name:"Convert to Markdown text",exact:false}).click();
+  await expect(page.getByText("Word-study.docx.md",{exact:true})).toBeVisible();
+  await expect(page.getByText("PDF-study.pdf.md",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Import notes",exact:true}).last().click();
+  await expect(page.getByRole("heading",{name:"2 notes imported",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Back to your workspace",exact:true}).click();
+  const row=page.locator(".note-row").filter({hasText:"Tool calling"}).first();await row.click({button:"right"});
+  await page.getByRole("menuitem",{name:"Print & export…",exact:true}).click();
+  const download=page.waitForEvent("download");await page.getByRole("button",{name:"Word (.docx)",exact:true}).click();
+  expect((await download).suggestedFilename()).toMatch(/\.docx$/);
+});

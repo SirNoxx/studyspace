@@ -26,6 +26,16 @@ const config: NextConfig = {
         ],
       },
       {
+        source: "/pdf.worker.min.mjs",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value:
+              "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; worker-src 'self'; base-uri 'none'",
+          },
+        ],
+      },
+      {
         source: "/api/code-runner",
         headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
       },

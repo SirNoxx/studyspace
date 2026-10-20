@@ -21,7 +21,7 @@ const { serverEnvironment } = require("../policy.cjs");
       `Desktop releases must be built from a clean checkout without ${name}. Keep cloud credentials in your deployment, and build desktop from a separate checkout.`,
     );
   }
-  const built = spawnSync(process.execPath, ["scripts/next.mjs", "build"], {
+  const built = spawnSync(process.execPath, ["scripts/next.mjs", "build", "--webpack"], {
     cwd: root,
     stdio: "inherit",
     env: serverEnvironment(47831),

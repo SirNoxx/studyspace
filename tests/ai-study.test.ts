@@ -162,3 +162,41 @@ it("does not mark partial provider output as complete", async () => {
   expect(text).toContain('"type":"error"');
   expect(text).not.toContain('"type":"complete"');
 });
+
+it.each(["http", "stream"])(
+  "explains exhausted provider credit for %s failures without exposing provider details",
+  async (transport) => {
+    const w = emptyWorkspace(),
+      n = createNote(w, undefined, { body: "Some notes" });
+    const input: AIInput = {
+      action: "summarize",
+      scope: "note",
+      noteId: n.id,
+      expectedRevision: 1,
+    };
+    const error = {
+      code: "credit_balance_exhausted",
+      message: "Private provider diagnostics",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        transport === "http"
+          ? Response.json({ error }, { status: 429 })
+          : new Response(
+              `data: ${JSON.stringify({ type: "response.failed", response: { error } })}\n\n`,
+            ),
+      ),
+    );
+    const text = await new Response(
+      streamStudyResponse(
+        input,
+        buildAIContext(w, input),
+        new AbortController().signal,
+      ),
+    ).text();
+    expect(text).toContain("add API credits");
+    expect(text).not.toContain("Private provider diagnostics");
+    expect(text).not.toContain('"type":"complete"');
+  },
+);

@@ -10,9 +10,9 @@ import {
   ArrowRight,
 } from "lucide-react";
 import type { AppContext } from "./WorkspaceApp";
-import type { Note } from "@/lib/model";
+import { type Note, contextDefinitions } from "@/lib/model";
 import { saveNote } from "@/lib/domain";
-import { resolveLink } from "@/lib/markdown";
+import { resolveLink, includeLinkedDefinitions } from "@/lib/markdown";
 import Editor, { type EditorHandle } from "./Editor";
 import { ModulesButton } from "./ModuleGallery";
 import Markdown from "./Markdown";
@@ -46,7 +46,14 @@ export default function SideNotePane({
   onFocus: () => void;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<"live" | "source" | "reading">("live");
+  const [mode, setMode] = useState<"live" | "source" | "reading">(
+    ctx.collaboration?.readOnly ? "reading" : "live",
+  );
+  const definitions = includeLinkedDefinitions(
+    note.body,
+    contextDefinitions(ctx.w, note.containerId),
+    ctx.w.definitions,
+  );
   const scroll = useRef<HTMLDivElement>(null),
     positions = useRef(new Map<string, number>());
   useLayoutEffect(() => {
@@ -109,7 +116,9 @@ export default function SideNotePane({
           <button
             key={value}
             aria-pressed={mode === value}
-            onClick={() => setMode(value)}
+            onClick={() =>
+              setMode(ctx.collaboration?.readOnly ? "reading" : value)
+            }
           >
             {value[0].toUpperCase() + value.slice(1)}
           </button>
@@ -120,17 +129,27 @@ export default function SideNotePane({
           className="side-note-title"
           aria-label="Right note title"
           value={note.title}
-          readOnly={mode === "reading"}
+          readOnly={!!ctx.collaboration?.readOnly || mode === "reading"}
           maxLength={240}
           onChange={(e) => update({ title: e.target.value })}
           onKeyDown={(e) => {
             if (e.key === "Enter") handle.current?.focus();
           }}
         />
-        <div className="writing-area">
+        <div className="writing-area" data-workbook-scope={ctx.account} data-workbook-collection={ctx.collaboration?.id} data-note-id={note.id}>
           {mode === "reading" ? (
             <Markdown
+              key={note.id}
+              collapsibleHeadings
               body={note.body}
+              onBodyChange={ctx.collaboration?.readOnly ? undefined : (body, previous) => ctx.mutate((w) => {
+                const current = w.notes.find((n) => n.id === note.id);
+                if (current?.body === previous) saveNote(w, current.id, current.revision, { body });
+              })}
+              definitions={definitions}
+              onDefinition={(id) =>
+                ctx.setDialog({ type: "definition-detail", id })
+              }
               notes={ctx.w.notes}
               attachments={ctx.w.attachments}
               demo={ctx.demo}
@@ -148,15 +167,20 @@ export default function SideNotePane({
             />
           ) : (
             <Editor
+              key={ctx.collaboration ? note.id : undefined}
+              sharedText={ctx.collaboration?.text(note.id)}
+              readOnly={ctx.collaboration?.readOnly}
               id={note.id}
               body={note.body}
               mode={mode}
               handle={handle}
               onChange={(body) => update({ body })}
               onSelection={onSelection}
-              definitions={[]}
-              onDefinition={() => {}}
-              onAttach={(files) => void ctx.attach(files, note.id)}
+              definitions={definitions}
+              onDefinition={(id) =>
+                ctx.setDialog({ type: "definition-detail", id })
+              }
+              onAttach={(files, placement) => void ctx.attach(files, note.id, placement)}
               onChat={(text) => ctx.openChat(text, note.id)}
               onBlockAction={(action, block) =>
                 ctx.blockAction?.(action, block, note.id)
@@ -188,7 +212,7 @@ export default function SideNotePane({
                 }
               >
                 <BookA size={14} />
-                Add to dictionary
+                Create definition
               </button>
               <button
                 onClick={() =>
@@ -207,11 +231,16 @@ export default function SideNotePane({
               <button
                 onClick={() => {
                   onSelection(text);
-                  ctx.setDialog({ type: "hyperlink" });
+                  ctx.setDialog({
+                    type: "hyperlink",
+                    value: text,
+                    sourceId: note.id,
+                    reading: mode === "reading",
+                  });
                 }}
               >
                 <Link2 size={14} />
-                Insert / edit link
+                Insert or edit link / definition
               </button>
               <button onClick={() => ctx.openChat(text, note.id)}>
                 <MessageCircle size={14} />

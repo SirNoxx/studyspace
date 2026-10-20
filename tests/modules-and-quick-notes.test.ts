@@ -24,7 +24,13 @@ import { noteStudyText } from "../src/lib/transcripts";
 it("preserves every module through Markdown and rejects malformed imported data", () => {
   for (const t of moduleTemplates) {
     const b = studyCodeBlocks(newModule(t.id))[0];
-    expect(parseModule(b.code)).toEqual(createModuleData(t.id));
+    const parsed = parseModule(b.code);
+    const fresh = createModuleData(t.id);
+    if (parsed?.kind === "spreadsheet" && fresh.kind === "spreadsheet") {
+      expect(parsed.workbookId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+      expect(parsed.workbookId).not.toBe(fresh.workbookId);
+      expect(parsed).toEqual({ ...fresh, workbookId: parsed.workbookId });
+    } else expect(parsed).toEqual(fresh);
   }
   expect(
     parseModule(

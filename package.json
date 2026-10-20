@@ -1,6 +1,6 @@
 {
   "name": "studyspace",
-  "version": "2.0.1",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -43,19 +43,31 @@
     "@radix-ui/react-dropdown-menu": "latest",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "@univerjs/preset-sheets-core": "0.25.1",
+    "@univerjs/preset-sheets-filter": "0.25.1",
+    "@univerjs/preset-sheets-find-replace": "0.25.1",
+    "@univerjs/preset-sheets-sort": "0.25.1",
+    "@univerjs/presets": "0.25.1",
     "@yowasp/clang": "22.0.0-git20542-10",
+    "dictionary-en": "4.0.0",
     "diff": "latest",
+    "docx": "9.7.1",
     "dompurify": "3.4.15",
+    "exceljs": "4.4.0",
     "fast-xml-parser": "latest",
     "fflate": "latest",
+    "fuzzball": "2.2.6",
     "idb": "latest",
     "immer": "^11.1.18",
     "ipaddr.js": "latest",
     "jsdom": "26.1.0",
     "katex": "latest",
     "lucide-react": "latest",
+    "mammoth": "1.12.2",
     "mermaid": "latest",
     "next": "latest",
+    "nspell": "2.1.5",
+    "pdf-lib": "1.17.1",
     "pdfjs-dist": "latest",
     "pyodide": "314.0.6",
     "react": "latest",
@@ -66,12 +78,22 @@
     "remark-gfm": "latest",
     "remark-math": "latest",
     "remark-parse": "latest",
+    "retext-contractions": "6.0.0",
+    "retext-english": "5.0.0",
+    "retext-indefinite-article": "5.0.0",
+    "retext-repeated-words": "5.0.0",
+    "retext-stringify": "4.0.0",
+    "rxjs": "7.8.2",
     "sql.js": "1.14.2",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2",
     "typescript-runtime": "npm:typescript@6.0.3",
     "undici": "latest",
     "unified": "latest",
     "unist-util-visit": "latest",
+    "y-codemirror.next": "0.3.6",
     "yaml": "^2.9.0",
+    "yjs": "13.6.32",
     "zod": "latest"
   },
   "devDependencies": {
@@ -80,10 +102,13 @@
     "@playwright/test": "latest",
     "@types/jsdom": "latest",
     "@types/node": "latest",
+    "@types/nspell": "2.1.6",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "@types/sql.js": "1.4.11",
+    "@types/turndown": "5.0.6",
     "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5",
     "prettier": "^3.9.6",
     "tsx": "latest",
     "typescript": "latest",
@@ -91,5 +116,11 @@
   },
   "engines": {
     "node": ">=24.11.1 <25"
+  },
+  "overrides": {
+    "nanoid": "5.1.16",
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

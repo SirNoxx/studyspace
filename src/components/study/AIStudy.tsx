@@ -19,9 +19,27 @@ import { Modal, Menu } from "../ui";
 import StudyCardDrafts from "./StudyCardDrafts";
 import { actions } from "./chat-actions";
 import { noteStudyText } from "@/lib/transcripts";
+import { aiClientId } from "@/lib/ai-client";
 
 type Scope = "selection" | "note" | "subject" | "folder";
 export default function AIStudy({ ctx }: { ctx: AppContext }) {
+  const [allowance, setAllowance] = useState<{
+    limit: number;
+    remaining?: number;
+  } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/ai", { signal: controller.signal })
+      .then(async (r) => {
+        if (r.ok) {
+          const value = await r.json();
+          if (Number.isInteger(value.dailyLimit))
+            setAllowance({ limit: value.dailyLimit });
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [chatId, setChatId] = useState(
     () => ctx.w.ai.at(-1)?.chatId ?? ctx.w.ai.at(-1)?.id ?? uid(),
   );
@@ -187,7 +205,10 @@ export default function AIStudy({ ctx }: { ctx: AppContext }) {
     try {
       const response = await fetch("/api/ai", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-studyspace-ai-client": aiClientId(),
+        },
         body: JSON.stringify({
           action,
           noteId: note.id,
@@ -196,7 +217,7 @@ export default function AIStudy({ ctx }: { ctx: AppContext }) {
           difficulty,
           consent: ctx.w.settings.aiConsent,
           personality: ctx.w.settings.aiPersonality ?? "",
-          ...(ctx.demo
+          ...(ctx.demo || ctx.collaboration
             ? {
                 localContext: {
                   notes: localNotes.map((n) => ({
@@ -241,6 +262,11 @@ export default function AIStudy({ ctx }: { ctx: AppContext }) {
         signal: controller.signal,
       });
       if (!response.ok) throw new Error((await response.json()).error);
+      if (response.headers.has("X-AI-Daily-Limit"))
+        setAllowance({
+          limit: Number(response.headers.get("X-AI-Daily-Limit")),
+          remaining: Number(response.headers.get("X-AI-Remaining")),
+        });
       if (!response.body)
         throw new Error("The response was empty. Please retry.");
       const reader = response.body.getReader(),
@@ -867,12 +893,16 @@ export default function AIStudy({ ctx }: { ctx: AppContext }) {
             </button>
           )}
         </div>
-        {ctx.demo && (
+        {
           <small className="chat-availability">
-            AI requests require a signed-in account and a configured provider.
-            Only the selected material is sent.
+            Free AI · No sign-in required
+            {allowance
+              ? ` · ${allowance.remaining === undefined ? `Up to ${allowance.limit} requests daily` : `${allowance.remaining} of ${allowance.limit} requests left today`}`
+              : ""}
+            . Resets at midnight UTC. Large requests also use a daily processing
+            allowance. Only selected material is sent.
           </small>
-        )}
+        }
       </form>
     </section>
   );

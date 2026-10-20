@@ -11,7 +11,7 @@ import {
   useSocial,
 } from "./common";
 
-export default function Profile({ id }: { id?: string }) {
+export default function Profile({ id,deviceStats }: { id?: string;deviceStats?:Record<string,number> }) {
   const q = useSocial("profile", id),
     a = useAction();
   const [edit, setEdit] = useState(false),
@@ -133,14 +133,13 @@ export default function Profile({ id }: { id?: string }) {
                 />
               </label>
               <p className="muted">
-                Share this ID with a collection owner to receive an invitation.
-                You can collaborate without creating a social profile.
+                Collaborators can invite you using your account email. You can collaborate without making your profile public.
               </p>
               <h2>
                 Account statistics <small>Only you can see these</small>
               </h2>
               <div className="social-stats">
-                {Object.entries(d.stats || {}).map(([label, value]) => (
+                {Object.entries({...d.stats,...deviceStats}).map(([label, value]) => (
                   <div className="social-card" key={label}>
                     <strong>{String(value)}</strong>
                     <span>

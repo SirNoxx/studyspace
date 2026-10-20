@@ -54,6 +54,15 @@ export default function AISuggestion({
               body: JSON.stringify({
                 action: kind === "card" ? "quiz" : "clarify",
                 noteId: note.id,
+                consent: ctx.w.settings.aiConsent,
+                ...(ctx.demo || ctx.collaboration
+                  ? {
+                      localContext: {
+                        notes: [note],
+                        containers: ctx.w.containers,
+                      },
+                    }
+                  : {}),
                 scope: "note",
                 selection: passage,
                 question:

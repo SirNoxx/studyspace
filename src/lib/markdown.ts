@@ -4,7 +4,29 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { visit } from "unist-util-visit";
 import type { Definition } from "./model";
+import { normalizeTaskLists } from "./task-lists";
+import {pdfModuleSchema} from "./pdf-module";
+import {studyCodeBlocks} from "./code-blocks";
+import {publicSpreadsheetPreviews} from './spreadsheets/references';
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
+/** Accept the compact task shorthand in reading views as well as the editor. */
+export function compactTaskLists() {
+  return (tree: any, file: { value: unknown }) => {
+    const source = String(file.value);
+    visit(tree, "listItem", (item: any) => {
+      if (item.checked != null) return;
+      const paragraph = item.children?.[0];
+      const text = paragraph?.type === "paragraph" && paragraph.children?.[0];
+      if (text?.type !== "text") return;
+      const offset = text.position?.start.offset;
+      const match = /^\[\](?:[\t ]+|$)/.exec(text.value);
+      // Escaped markers and links must remain literal text / links.
+      if (!match || offset == null || source.slice(offset, offset + 2) !== "[]") return;
+      item.checked = false;
+      text.value = text.value.slice(match[0].length);
+    });
+  };
+}
 export function proseRanges(markdown: string) {
   const ranges: { from: number; to: number; text: string }[] = [];
   const tree = parser.parse(markdown);
@@ -32,6 +54,9 @@ export function attachmentTargets(markdown: string): string[] {
     markdown.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""),
   );
   const found = new Set<string>();
+  for(const block of studyCodeBlocks(markdown).filter(b=>b.language==="module")) {
+    try {const pdf=pdfModuleSchema.safeParse(JSON.parse(block.code));if(pdf.success&&pdf.data.source)found.add(pdf.data.source);}catch{/* Invalid module remains source text. */}
+  }
   const definitions = new Map<string, string>();
   visit(tree, (node: any) => {
     if (node.type === "definition") definitions.set(node.identifier, node.url);
@@ -154,7 +179,7 @@ export function conceptMatcher(entries: Definition[]) {
   for (const entry of entries)
     for (const term of [entry.term, ...entry.aliases]) {
       let node = root;
-      for (const c of term.toLocaleLowerCase()) {
+      for (const c of term.trim().replace(/\s+/gu, " ").toLocaleLowerCase()) {
         if (!node.children.has(c))
           node.children.set(c, { children: new Map() });
         node = node.children.get(c)!;
@@ -169,8 +194,13 @@ export function conceptMatcher(entries: Definition[]) {
       let node = root,
         best: Match | undefined;
       for (let j = i; j < text.length; j++) {
-        const next = node.children.get(text[j].toLocaleLowerCase());
+        const whitespace = /\s/u.test(text[j]);
+        const next = node.children.get(
+          whitespace ? " " : text[j].toLocaleLowerCase(),
+        );
         if (!next) break;
+        if (whitespace)
+          while (j + 1 < text.length && /\s/u.test(text[j + 1])) j++;
         node = next;
         if (node.entry && (j + 1 === text.length || !word(text[j + 1])))
           best = { from: i + offset, to: j + 1 + offset, entry: node.entry };
@@ -199,7 +229,10 @@ export function publicMarkdown(
   ids: Set<string>,
   assets: Set<string> = new Set(),
 ) {
-  let safe = body
+    for(const block of studyCodeBlocks(body).filter(b=>b.language==="module").reverse()) {
+      try {const pdf=pdfModuleSchema.safeParse(JSON.parse(block.code));if(pdf.success&&(!pdf.data.source.startsWith("attachment:")||!assets.has(pdf.data.source.slice(11))))body=body.slice(0,block.from)+"[PDF attachment not included in this publication]"+body.slice(block.to);}catch{/* Invalid modules are preserved. */}
+    }
+    let safe = publicSpreadsheetPreviews(body)
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
     .replace(/%%[\s\S]*?%%/g, "")
     .replace(/<!--[\s\S]*?-->/g, "");
@@ -226,11 +259,11 @@ export function publicMarkdown(
   return safe.replace(/<[^>]*>/g, "");
 }
 export function readingMarkdown(body: string) {
-  return body
+  return normalizeTaskLists(body
     .replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "")
     .replace(/%%[\s\S]*?%%/g, "")
     .replace(/^>\s*\[!(\w+)\]([^\n]*)/gm, "> **$1$2**")
-    .replace(/==([^=\n]+)==/g, "**$1**");
+    .replace(/==([^=\n]+)==/g, "**$1**"));
 }
 export function resolveLink(
   target: string,
@@ -285,4 +318,97 @@ export function resolveLink(
         status: candidates.length ? "ambiguous" : "missing",
         candidates: candidates.map((n) => n.id),
       };
+}
+
+/** Explicit occurrence links are independent of dictionary terms and aliases. */
+export function definitionLinks(body: string) {
+  const links: {
+    id: string;
+    from: number;
+    to: number;
+    labelFrom: number;
+    labelTo: number;
+  }[] = [];
+  visit(parser.parse(body), "link", (node: any) => {
+    if (!node.url?.startsWith("#definition:") || !node.position) return;
+    const from = node.position.start.offset,
+      to = node.position.end.offset;
+    const split = body.slice(from, to).lastIndexOf("](");
+    if (split < 1) return;
+    try {
+      const id = decodeURIComponent(node.url.slice(12));
+      if (id)
+        links.push({
+          id,
+          from,
+          to,
+          labelFrom: from + 1,
+          labelTo: from + split,
+        });
+    } catch {}
+  });
+  return links;
+}
+export function definitionLink(text: string, id: string) {
+  if (!text.trim() || /\n\s*\n/.test(text))
+    throw Error("Select text within one paragraph to attach a definition.");
+  return `[${text.replace(/([\\`*_[\]<>!])/g, "\\$1")}](#definition:${encodeURIComponent(id)})`;
+}
+export function includeLinkedDefinitions(
+  body: string,
+  scoped: Definition[],
+  all: Definition[],
+) {
+  const ids = new Set(definitionLinks(body).map((link) => link.id));
+  return [
+    ...scoped,
+    ...all.filter(
+      (entry) =>
+        !entry.trashed &&
+        ids.has(entry.id) &&
+        !scoped.some((d) => d.id === entry.id),
+    ),
+  ];
+}
+
+/** Never create nested links or modify code examples when attaching a concept. */
+export function definitionAttachmentRange(
+  body: string,
+  from: number,
+  to: number,
+) {
+  if (
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from < 0 ||
+    to > body.length ||
+    from >= to
+  )
+    throw Error("Highlight the text you want to link again.");
+  const existing = definitionLinks(body).find(
+    (link) =>
+      (link.labelFrom === from && link.labelTo === to) ||
+      (link.from === from && link.to === to),
+  );
+  if (existing) return { from: existing.from, to: existing.to };
+  visit(parser.parse(body), (node: any) => {
+    if (
+      ![
+        "link",
+        "linkReference",
+        "image",
+        "imageReference",
+        "inlineCode",
+        "code",
+        "html",
+      ].includes(node.type) ||
+      !node.position
+    )
+      return;
+    if (node.position.start.offset < to && node.position.end.offset > from)
+      throw Error(
+        "Select plain text outside an existing link or code block to attach a definition.",
+      );
+  });
+  return { from, to };
 }

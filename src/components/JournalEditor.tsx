@@ -182,7 +182,7 @@ export default function JournalEditor({
               ctx.blockAction?.(action, block, note.id)
             }
             onDefinition={() => {}}
-            onAttach={(files) => void ctx.attach(files)}
+            onAttach={(files, placement) => void ctx.attach(files, note.id, placement)}
           />
         </div>
       </div>

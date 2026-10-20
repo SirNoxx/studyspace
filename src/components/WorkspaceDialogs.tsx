@@ -1,11 +1,18 @@
 "use client";
+import {choosePDFImport} from "./PDFImportPrompt";
 import { quickNotesContainer } from "@/lib/quick-notes";
+import {
+  definitionCollections as availableDefinitionCollections,
+  definitionCollection,
+} from "@/lib/definition-collections";
+import SharedHistory from "./social/SharedHistory";
+import CollectionIconPicker from "./CollectionIconPicker";
 import QuickNoteMove from "./QuickNoteMove";
 import PublishPicker from "./PublishPicker";
 import { publicationCandidates } from "@/lib/publish-picker";
 import { locateQuote } from "@/lib/anchors";
 import { focusPassage } from "@/lib/focus-passage";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   BookA,
@@ -31,8 +38,16 @@ import {
   Paperclip,
 } from "lucide-react";
 import { type AppContext, type DialogState } from "./WorkspaceApp";
-import { Modal, Field, IconButton, SymbolIcon, icons } from "./ui";
+import { Modal, Field, IconButton, SymbolIcon } from "./ui";
 import Markdown from "./Markdown";
+import DefinitionEditor from "./DefinitionEditor";
+import QuickDefinition, { type NestedDefinition } from "./QuickDefinition";
+import { saveDictionaryDefinition } from "@/lib/definitions";
+import DefinitionUsages from "./DefinitionUsages";
+import DocumentExport from "./DocumentExport";
+import { studyCodeBlocks, codeFence } from "@/lib/code-blocks";
+import { parseModule } from "@/lib/modules";
+import { publishDeviceSnapshot } from "@/lib/device-publishing";
 import {
   uid,
   now,
@@ -83,6 +98,76 @@ export default function Dialogs({
   const { w, mutate, active } = ctx;
   const existingDefinition = w.definitions.find((d) => d.id === dialog.id),
     existingSource = w.sources.find((s) => s.id === dialog.id);
+  const [nestedDefinition, setNestedDefinition] = useState<NestedDefinition | null>(null);
+  const nestedEntries = useMemo(() => w.definitions.filter(d => !d.trashed && d.id !== existingDefinition?.id), [w.definitions, existingDefinition?.id]);
+  const defineNested = (term: string) => {
+    const match = nestedEntries.find(d => [d.term, ...d.aliases].some(value => value.toLocaleLowerCase() === term.trim().toLocaleLowerCase()));
+    setNestedDefinition({ term: match?.term ?? term.trim(), id: match?.id });
+  };
+  const openNested = (id: string) => {
+    const entry = nestedEntries.find(d => d.id === id);
+    if (entry) setNestedDefinition({ term: entry.term, id });
+  };
+  const definitionCollections = availableDefinitionCollections(w);
+  const definitionSource = w.notes.find(
+    (n) =>
+      n.id === (existingDefinition?.noteId ?? dialog.sourceId ?? active?.id),
+  );
+  const definitionDestination = String(
+    (existingDefinition?.moduleBlockId
+      ? definitionSource?.containerId
+      : undefined) ??
+      dialog.destination ??
+      dialog.parentId ??
+      existingDefinition?.subjectIds[0] ??
+      definitionSource?.containerId ??
+      ctx.focus ??
+      "",
+  );
+  const moduleCollectionId = existingDefinition?.moduleBlockId
+    ? definitionCollection(w, definitionSource?.containerId ?? "")?.id
+    : undefined;
+  const [definitionCollectionIds, setDefinitionCollectionIds] = useState<
+    string[]
+  >(() => {
+    const ids = existingDefinition?.subjectIds.length
+      ? existingDefinition.subjectIds
+      : [definitionDestination];
+    return [
+      ...new Set(
+        [
+          moduleCollectionId,
+          ...ids.map((id) => definitionCollection(w, id)?.id),
+        ].filter((id): id is string => !!id),
+      ),
+    ];
+  });
+  const [collectionQuery, setCollectionQuery] = useState("");
+  const collectionOptionsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = collectionOptionsRef.current;
+    if (dialog.type !== "definition" || !list) return;
+    // Handle this nested scroll area before modal scroll-lock listeners.
+    // React wheel handlers are passive, so use a native listener to prevent
+    // a second scroll (or scrolling the surrounding dialog at the boundaries).
+    const scrollCollections = (event: WheelEvent) => {
+      if (
+        event.ctrlKey || event.metaKey || event.shiftKey ||
+        !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY) ||
+        list.scrollHeight <= list.clientHeight
+      ) return;
+      const unit = event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? list.clientHeight
+        : event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? parseFloat(getComputedStyle(list).lineHeight) || 20
+          : 1;
+      list.scrollTop += event.deltaY * unit;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    list.addEventListener("wheel", scrollCollections, { passive: false });
+    return () => list.removeEventListener("wheel", scrollCollections);
+  }, [dialog.type]);
   const publishNote = w.notes.find((n) => n.id === dialog.id);
   const publicationContainerId = dialog.container
     ? dialog.id
@@ -429,8 +514,26 @@ export default function Dialogs({
   }
   if (dialog.type === "folder-attachments")
     return <AttachmentsPanel ctx={ctx} id={dialog.id!} onClose={onClose} />;
+  if (dialog.type === "review-preview") {
+    const card = w.review.find((item) => item.id === dialog.id);
+    return (
+      <Modal title="Study card" onClose={onClose}>
+        {card ? (
+          <>
+            <Markdown body={card.front} />
+            <details>
+              <summary>Show answer</summary>
+              <Markdown body={card.back} />
+            </details>
+          </>
+        ) : (
+          <p>This card is no longer available.</p>
+        )}
+      </Modal>
+    );
+  }
   if (dialog.type === "hyperlink")
-    return <HyperlinkDialog ctx={ctx} onClose={onClose} />;
+    return <HyperlinkDialog ctx={ctx} dialog={dialog} onClose={onClose} />;
   if (dialog.type === "attachment") {
     const asset = w.attachments.find((a) => a.id === dialog.id);
     return (
@@ -521,8 +624,9 @@ export default function Dialogs({
               {options}
             </select>
           </Field>
-          <div className="form-row">
-            <Field label="Color">
+          <div className="collection-appearance">
+            <div className="field" role="group" aria-label="Collection color">
+              <span>Color</span>
               <div className="color-options">
                 {[
                   "#739b8e",
@@ -543,31 +647,19 @@ export default function Dialogs({
                     {color === c && <Check size={14} />}
                   </button>
                 ))}
-                <input
-                  type="color"
-                  aria-label="Custom color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                />
+                <label className="collection-custom-color">
+                  <input
+                    type="color"
+                    aria-label="Custom color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                  />
+                  <span>Custom color</span>
+                  <code>{color.toUpperCase()}</code>
+                </label>
               </div>
-            </Field>
-            <Field label="Icon">
-              <div className="icon-picker">
-                {Object.keys(icons).map((i) => (
-                  <button
-                    type="button"
-                    key={i}
-                    title={i}
-                    aria-label={"Choose icon " + i}
-                    aria-pressed={icon === i}
-                    onClick={() => setIcon(i)}
-                  >
-                    <SymbolIcon name={i} />
-                    <small>{i}</small>
-                  </button>
-                ))}
-              </div>
-            </Field>
+            </div>
+            <CollectionIconPicker value={icon} onChange={setIcon} />
           </div>
           {dialog.kind !== "folder" && (
             <>
@@ -665,6 +757,39 @@ export default function Dialogs({
         </form>
       </Modal>
     );
+  if (dialog.type === "module-definition") {
+    const entries = w.definitions.filter(d => !d.trashed && !(d.noteId === dialog.sourceId && d.moduleBlockId === dialog.blockId) &&
+      [d.term, ...d.aliases, d.definition].join(" ").toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+    return <Modal title="Attach a definition" description="Reuse an existing definition at the top of your concept notes." onClose={onClose}>
+      <Field label="Search definitions"><input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Find a word or concept…" /></Field>
+      <div className="definition-link-results">
+        {entries.map(entry => <button className="definition-attach-choice" type="button" key={entry.id} onClick={() => submit(() => {
+          if (ctx.collaboration?.readOnly) throw Error("You need editing permission to attach a definition.");
+          mutate(s => {
+            const note = s.notes.find(n => n.id === dialog.sourceId && !n.trashed);
+            const block = note && studyCodeBlocks(note.body).find(b => b.id === dialog.blockId);
+            const data = block && parseModule(block.code);
+            const definition = s.definitions.find(d => d.id === entry.id && !d.trashed);
+            if (!note || !block || block.code !== dialog.code || data?.kind !== "definition" || !definition) throw Error("The module or definition changed. Open Attach a definition again.");
+            saveNote(s, note.id, note.revision, {body: note.body.slice(0, block.from) + codeFence({...block,
+              title: `${definition.term} definition`, code: JSON.stringify({...data, definitionId: definition.id, term: definition.term, explanation: definition.definition})}) + note.body.slice(block.to)}, "Attach existing definition");
+          }, "Definition attached.");
+          onClose();
+        })}>
+          <BookA size={17} /><span><strong>{entry.term}</strong><small>{entry.definition}</small></span>
+        </button>)}
+      </div>
+      {!entries.length && <p className="muted">{w.definitions.some(d => !d.trashed) ? "No matching definitions. Try another search." : "Create a dictionary definition first, then attach it here."}</p>}
+      {errors}
+    </Modal>;
+  }
+  if (dialog.type === "definition" && !existingDefinition && String(dialog.value ?? "").trim())
+    return <QuickDefinition ctx={ctx} term={String(dialog.value).trim()} subjectIds={definitionCollectionIds}
+      noteId={String(dialog.sourceId ?? active?.id ?? "")} onClose={onClose} />;
+  const nestedPopup = nestedDefinition && <QuickDefinition key={nestedDefinition.id ?? nestedDefinition.term}
+    ctx={ctx} {...nestedDefinition} subjectIds={definitionCollectionIds}
+    noteId={existingDefinition?.noteId ?? String(dialog.sourceId ?? active?.id ?? "")}
+    depth={1} onClose={() => setNestedDefinition(null)} />;
   if (dialog.type === "definition")
     return (
       <Modal
@@ -681,54 +806,42 @@ export default function Dialogs({
               setError("A term and definition are required.");
               return;
             }
+            const selectedCollections = [
+              ...new Set(
+                [moduleCollectionId, ...definitionCollectionIds].filter(
+                  (id): id is string => !!id,
+                ),
+              ),
+            ];
+            if (
+              !selectedCollections.length ||
+              selectedCollections.some(
+                (id) => !definitionCollections.some((c) => c.id === id),
+              )
+            ) {
+              setError(
+                "Choose at least one available collection for this definition.",
+              );
+              return;
+            }
+            let saved = false;
             mutate((s) => {
-              if (existingDefinition) {
-                const d = s.definitions.find(
-                  (d) => d.id === existingDefinition.id,
-                )!;
-                Object.assign(d, {
-                  term: name.trim(),
-                  definition: body,
-                  noteId:
-                    existingDefinition?.noteId ??
-                    String(dialog.sourceId ?? active?.id ?? ""),
-                  aliases: aliases
-                    .split(",")
-                    .map((a) => a.trim())
-                    .filter(Boolean),
-                  subjectIds: [
-                    parent ||
-                      subjectOf(s, active?.containerId ?? general(s).id)!.id,
-                  ],
-                  updatedAt: now(),
-                });
-                for (const r of s.review.filter((r) => r.sourceId === d.id))
-                  r.contentChanged = true;
-              } else
-                s.definitions.push({
-                  id: uid(),
-                  noteId: String(dialog.sourceId ?? active?.id ?? ""),
-                  term: name.trim(),
-                  definition: body,
-                  aliases: aliases
-                    .split(",")
-                    .map((a) => a.trim())
-                    .filter(Boolean),
-                  subjectIds: [
-                    parent ||
-                      subjectOf(s, active?.containerId ?? general(s).id)!.id,
-                  ],
-                  createdAt: now(),
-                  updatedAt: now(),
-                });
+              saveDictionaryDefinition(s, {
+                id: existingDefinition?.id, term: name, definition: body,
+                noteId: String(dialog.sourceId ?? active?.id ?? ""),
+                aliases: aliases.split(",").map(a => a.trim()).filter(Boolean),
+                subjectIds: selectedCollections,
+              });
+              saved = true;
             }, "Definition saved.");
-            onClose();
+            if (saved) onClose();
           }}
         >
           <Field label="Word or phrase">
             <input
               autoFocus
               required
+              maxLength={500}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Tool calling"
@@ -740,18 +853,14 @@ export default function Dialogs({
             ) && (
               <p className="field-hint">
                 This term already has a definition. You can keep a separate
-                meaning for this subject.
+                meaning for this collection.
               </p>
             )}
-          <Field label="Definition">
-            <textarea
-              required
-              rows={7}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Explain it in your own words. Markdown is welcome."
-            />
-          </Field>
+          <div className="field">
+            <span>Definition</span>
+            <DefinitionEditor value={body} onChange={setBody} definitions={nestedEntries}
+              onDefine={defineNested} onDefinition={openNested} />
+          </div>
           <Field label="Aliases · comma separated">
             <input
               value={aliases}
@@ -759,11 +868,71 @@ export default function Dialogs({
               placeholder="Other names for the same idea"
             />
           </Field>
-          <Field label="Subject">
-            <select value={parent} onChange={(e) => setParent(e.target.value)}>
-              {options}
-            </select>
-          </Field>
+          <fieldset className="definition-collection-picker">
+            <legend>Collections</legend>
+            <input
+              type="search"
+              aria-label="Search collections"
+              placeholder="Find a collection…"
+              value={collectionQuery}
+              onChange={(e) => setCollectionQuery(e.target.value)}
+            />
+            <div
+              ref={collectionOptionsRef}
+              className="definition-collection-options"
+              role="region"
+              aria-label="Available collections"
+              tabIndex={0}
+            >
+              {definitionCollections
+                .filter((c) =>
+                  ancestry(w, c.id)
+                    .map((p) => p.title)
+                    .join(" / ")
+                    .toLocaleLowerCase()
+                    .includes(collectionQuery.trim().toLocaleLowerCase()),
+                )
+                .map((c) => (
+                  <label key={c.id}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        definitionCollectionIds.includes(c.id) ||
+                        moduleCollectionId === c.id
+                      }
+                      disabled={moduleCollectionId === c.id}
+                      onChange={(e) =>
+                        setDefinitionCollectionIds((ids) =>
+                          e.target.checked
+                            ? [...ids, c.id]
+                            : ids.filter((id) => id !== c.id),
+                        )
+                      }
+                    />
+                    <span>
+                      {ancestry(w, c.id)
+                        .map((parent) => parent.title)
+                        .join(" / ")}
+                    </span>
+                  </label>
+                ))}
+            </div>
+            <small>
+              {definitionCollectionIds.length} selected · Choose one or more
+              collections
+            </small>
+          </fieldset>
+          <p className="field-hint">
+            One definition is shared across notes and folders in all selected
+            collections.
+          </p>
+          {existingDefinition?.moduleBlockId && (
+            <p className="field-hint">
+              Linked to a Definition module. Edits update its note; its home
+              collection follows the note. You can select additional
+              collections.
+            </p>
+          )}
           {errors}
           {!existingDefinition && active && (
             <AISuggestion
@@ -775,6 +944,7 @@ export default function Dialogs({
           )}
           {formFooter("Save definition")}
         </form>
+        {nestedPopup}
       </Modal>
     );
   if (dialog.type === "definition-detail" && existingDefinition)
@@ -786,7 +956,8 @@ export default function Dialogs({
           .join(" · ")}
         onClose={onClose}
       >
-        <Markdown body={existingDefinition.definition} />
+        <Markdown body={existingDefinition.definition} definitions={nestedEntries} onDefinition={openNested} />
+        <DefinitionUsages ctx={ctx} definitionId={existingDefinition.id} />
         {existingDefinition.aliases.length > 0 && (
           <p className="muted">
             Also known as {existingDefinition.aliases.join(", ")}
@@ -797,6 +968,28 @@ export default function Dialogs({
             className="text-button danger"
             onClick={() => {
               mutate((s) => {
+                if (existingDefinition.moduleBlockId) {
+                  const note = s.notes.find(
+                    (n) => n.id === existingDefinition.noteId,
+                  );
+                  const block =
+                    note &&
+                    studyCodeBlocks(note.body).find(
+                      (b) => b.id === existingDefinition.moduleBlockId,
+                    );
+                  if (note && block)
+                    saveNote(
+                      s,
+                      note.id,
+                      note.revision,
+                      {
+                        body:
+                          note.body.slice(0, block.from) +
+                          note.body.slice(block.to),
+                      },
+                      "Remove definition module",
+                    );
+                }
                 s.definitions.find(
                   (d) => d.id === existingDefinition.id,
                 )!.trashed = true;
@@ -804,7 +997,10 @@ export default function Dialogs({
               onClose();
             }}
           >
-            <Trash2 size={14} /> Delete
+            <Trash2 size={14} />{" "}
+            {existingDefinition.moduleBlockId
+              ? "Delete definition and module"
+              : "Delete"}
           </button>
           <div className="inline-actions">
             <IconButton
@@ -847,6 +1043,7 @@ export default function Dialogs({
             </button>
           </div>
         </div>
+        {nestedPopup}
       </Modal>
     );
   if (dialog.type === "tags")
@@ -1109,7 +1306,10 @@ export default function Dialogs({
                   authors: authors
                     ? authors.split(",").map((s) => s.trim())
                     : [],
-                  overrides: sourceTitle ? ["title"] : [],
+                  overrides: [
+                    ...(sourceTitle ? ["title" as const] : []),
+                    ...(authors ? ["authors" as const] : []),
+                  ],
                   manual: true,
                   status: "pending",
                   subjectIds: [parent || general(s).id],
@@ -1521,6 +1721,8 @@ export default function Dialogs({
     );
   if (dialog.type === "web-source")
     return <WebReader ctx={ctx} source={existingSource!} onClose={onClose} />;
+  if (dialog.type === "history" && ctx.collaboration && dialog.id)
+    return <SharedHistory ctx={ctx} id={dialog.id} onClose={onClose} />;
   if (dialog.type === "history") {
     const n = w.notes.find((n) => n.id === dialog.id);
     return (
@@ -1586,13 +1788,24 @@ export default function Dialogs({
       </Modal>
     );
   }
+  if (dialog.type === "document-export") {
+    const note = w.notes.find((n) => n.id === dialog.id) ?? active;
+    return note ? (
+      <DocumentExport
+        note={note}
+        attachments={w.attachments}
+        demo={ctx.demo}
+        onClose={onClose}
+      />
+    ) : null;
+  }
   if (dialog.type === "import")
     return (
       <Modal
         title={
           report ? "Your notes have arrived" : "Bring your knowledge with you"
         }
-        description="Import Markdown directly from Obsidian. Your original files stay untouched."
+        description="Import Markdown, Word, text and PDFs. Keep original PDF pages in a PDFs module, or choose conversion to Markdown text."
         onClose={onClose}
         wide
       >
@@ -1600,21 +1813,23 @@ export default function Dialogs({
           <>
             <label className="upload-zone">
               <Upload size={30} />
-              <strong>Choose Markdown files or a vault ZIP</strong>
+              <strong>
+                Choose notes, Word documents, PDFs, or a vault ZIP
+              </strong>
               <span>
-                UTF-8 Markdown · 25 MB compressed / 100 MB expanded · 2,000
-                files
+                Markdown, DOCX, PDF, text · 25 MB compressed / 100 MB expanded ·
+                2,000 files
               </span>
               <input
                 type="file"
                 multiple
-                accept=".md,.zip,.pdf,.png,.jpg,.jpeg,.gif,.webp"
+                accept=".md,.txt,.docx,.doc,.zip,.pdf,.png,.jpg,.jpeg,.gif,.webp"
                 onChange={async (e) => {
                   setBusy(true);
                   setError("");
                   try {
                     setPlan(
-                      await prepareImport(Array.from(e.target.files ?? [])),
+                      await prepareImport(Array.from(e.target.files ?? []), {choosePDFMode:names=>choosePDFImport(names,ctx.account)}),
                     );
                   } catch (e) {
                     setError((e as Error).message);
@@ -1633,7 +1848,7 @@ export default function Dialogs({
                 onChange={async (e) => {
                   try {
                     setPlan(
-                      await prepareImport(Array.from(e.target.files ?? [])),
+                      await prepareImport(Array.from(e.target.files ?? []), {choosePDFMode:names=>choosePDFImport(names,ctx.account)}),
                     );
                   } catch (e) {
                     setError((e as Error).message);
@@ -1677,7 +1892,7 @@ export default function Dialogs({
                   <strong>
                     {plan.files.filter((f) => f.kind === "note").length}
                   </strong>{" "}
-                  Markdown notes
+                  notes / PDF modules
                 </span>
                 <span>
                   <strong>
@@ -1742,7 +1957,7 @@ export default function Dialogs({
                   onClick={async () => {
                     setBusy(true);
                     try {
-                      if (!ctx.demo) {
+                      if (!ctx.demo && !ctx.collaboration && !plan.files.some(f => f.kind === "workbook")) {
                         const { zipSync } = await import("fflate"),
                           { browserClient } =
                             await import("@/lib/supabase/browser");
@@ -1801,6 +2016,18 @@ export default function Dialogs({
                         const blob = new Blob([Uint8Array.from(file.bytes)], {
                           type: mime,
                         });
+                        if (ctx.collaboration) {
+                          const asset = await ctx.collaboration.upload(
+                            new File([blob], file.path.split("/").at(-1)!, {
+                              type: mime,
+                            }),
+                          );
+                          importedAssets.push({
+                            ...asset,
+                            filename: file.path,
+                          });
+                          continue;
+                        }
                         if (ctx.demo)
                           await (await localDB()).put("assets", blob, id);
                         else {
@@ -1821,6 +2048,9 @@ export default function Dialogs({
                           createdAt: now(),
                         });
                       }
+                      if (ctx.collaboration && plan.files.some(f => f.kind === "workbook")) throw Error("Import spreadsheets into a private note. Shared spreadsheet editing is not enabled yet.");
+                      const { stageWorkbookImports } = await import("@/lib/spreadsheets/backup");
+                      const importedPlan = await stageWorkbookImports(plan, ctx.account);
                       mutate((s) => {
                         const destination =
                           parent ||
@@ -1828,7 +2058,7 @@ export default function Dialogs({
                             title: name.trim() || "Imported notes",
                           }).id;
                         s.attachments.push(...importedAssets);
-                        const r = commitImport(s, plan, destination);
+                        const r = commitImport(s, importedPlan, destination);
                         setReport(r);
                         ctx.setFocus(destination);
                       });
@@ -1868,7 +2098,7 @@ export default function Dialogs({
               : "Publication saved"
         }
         description={
-          ctx.demo
+          ctx.demo && !ctx.cloudAccount
             ? "Local demo publication · this does not publish anything to the internet."
             : "Only the reviewed snapshot becomes public. Private edits remain private."
         }
@@ -2202,25 +2432,47 @@ export default function Dialogs({
                   }
                   setBusy(true);
                   try {
-                    if (ctx.demo)
+                    if (ctx.demo || ctx.collaboration) {
+                      const published =
+                        ctx.cloudAccount || ctx.collaboration
+                          ? await publishDeviceSnapshot(
+                              snapshot,
+                              ctx.collaboration
+                                ? async (id) => {
+                                    const response = await fetch(
+                                      "/api/attachments/" + id,
+                                    );
+                                    if (!response.ok)
+                                      throw Error(
+                                        "A selected shared attachment is unavailable.",
+                                      );
+                                    return response.blob();
+                                  }
+                                : undefined,
+                            )
+                          : snapshot;
                       mutate((s) => {
                         const old = s.publications.find(
                           (p) => p.id === snapshot.publicationId,
                         );
                         if (old) {
-                          old.versions.push(snapshot);
-                          old.current = snapshot;
+                          if (!old.versions.some((v) => v.id === published.id))
+                            old.versions.push(published);
+                          old.current = published;
+                          old.cloud = !!(ctx.cloudAccount || ctx.collaboration);
                           old.status = "published";
                         } else
                           s.publications.push({
                             id: snapshot.publicationId,
                             containerId: String(publicationContainerId),
-                            current: snapshot,
-                            versions: [snapshot],
+                            current: published,
+                            versions: [published],
+                            cloud: !!(ctx.cloudAccount || ctx.collaboration),
                             status: "published",
                           });
                       });
-                    else {
+                      setSnapshot(published);
+                    } else {
                       const r = await fetch("/api/publications", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -2255,7 +2507,7 @@ export default function Dialogs({
                 }}
               >
                 <Globe size={15} />
-                {ctx.demo
+                {ctx.demo && !ctx.cloudAccount
                   ? "Save local publication"
                   : existing
                     ? "Publish updates"
@@ -2267,7 +2519,7 @@ export default function Dialogs({
           <div className="publication-success">
             <Check size={36} />
             <h2>
-              {ctx.demo
+              {ctx.demo && !ctx.cloudAccount
                 ? "Your local reader preview is ready."
                 : "Your research is published."}
             </h2>
@@ -2293,15 +2545,21 @@ export default function Dialogs({
     );
   }
   if (dialog.type === "reader") {
-    const p = w.publications.find((p) => p.id === dialog.publicationId);
+    const p = dialog.snapshot
+      ? {
+          id: (dialog.snapshot as Snapshot).publicationId,
+          current: dialog.snapshot as Snapshot,
+          cloud: true,
+        }
+      : w.publications.find((p) => p.id === dialog.publicationId);
     return (
       <Modal title={p?.current.title ?? "Publication"} onClose={onClose} wide>
         {p ? (
           <>
             <div className="public-version-line">
               <Globe size={15} />
-              {ctx.demo ? "LOCAL DEMO · " : ""}Version {p.current.version} ·{" "}
-              {p.current.author}
+              {ctx.demo && !p.cloud ? "LOCAL PREVIEW · " : ""}Version{" "}
+              {p.current.version} · {p.current.author}
             </div>
             <Markdown body={p.current.description} />
             {p.current.notes.map((n) => (
@@ -2311,6 +2569,13 @@ export default function Dialogs({
                   body={n.body}
                   definitions={p.current.definitions}
                   notes={p.current.notes}
+                  attachments={p.current.attachments}
+                  demo={ctx.demo && !p.cloud}
+                  publicAssetBase={
+                    p.cloud || !ctx.demo
+                      ? `/api/public-assets/${p.current.publicationId}/${p.current.id}/`
+                      : undefined
+                  }
                   onLink={(target) => {
                     const n = p.current.notes.find(
                       (n) => n.id === target || n.title === target,

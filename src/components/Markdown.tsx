@@ -5,9 +5,6 @@ import remarkMath from "remark-math";
 import { visit } from "unist-util-visit";
 import rehypeKatex from "rehype-katex";
 import {
-  useEffect,
-  useRef,
-  useState,
   Children,
   isValidElement,
   type ReactNode,
@@ -17,11 +14,17 @@ import {
   conceptMatcher,
   proseRanges,
   resolveLink,
+  compactTaskLists,
 } from "@/lib/markdown";
 import type { Definition, Attachment, Note } from "@/lib/model";
 import AttachmentMedia, { findAttachment } from "./AttachmentMedia";
+import Picture from "./Picture";
+import { pictureSource } from "@/lib/picture-source";
 import Whiteboard from "./Whiteboard";
 import NoteModule from "./NoteModule";
+import Diagram from "./Diagram";
+import ReadingHeadingSection from "./ReadingHeadingSection";
+import { readingHeadingSections } from "@/lib/heading-sections";
 function titledBlocks() {
   return (tree: any) =>
     visit(tree, "code", (node: any) => {
@@ -40,42 +43,6 @@ function titledBlocks() {
       }
     });
 }
-function Diagram({ code }: { code: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    import("mermaid").then(async ({ default: m }) => {
-      m.initialize({
-        startOnLoad: false,
-        securityLevel: "strict",
-        maxTextSize: 20000,
-        flowchart: { htmlLabels: false },
-        suppressErrorRendering: true,
-      });
-      try {
-        const { svg } = await m.render(
-          "diagram-" + crypto.randomUUID().replace(/-/g, ""),
-          code.replace(/^\s*%%\{[\s\S]*?\}%%/gm, ""),
-        );
-        if (!cancelled && ref.current) ref.current.innerHTML = svg;
-      } catch {
-        if (!cancelled) setError(true);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [code]);
-  return error ? (
-    <pre>
-      <code>{code}</code>
-      <small>Diagram could not be rendered. Original text is preserved.</small>
-    </pre>
-  ) : (
-    <div ref={ref} className="diagram" />
-  );
-}
 export default function Markdown({
   body,
   definitions = [],
@@ -91,6 +58,8 @@ export default function Markdown({
   onAIReference,
   publicAssetBase,
   notes = [],
+  collapsibleHeadings = false,
+  onBodyChange,
 }: {
   body: string;
   definitions?: Definition[];
@@ -106,6 +75,8 @@ export default function Markdown({
   onAIReference?: (id: string) => void;
   publicAssetBase?: string;
   notes?: Pick<Note, "id" | "title" | "body" | "originalPath" | "metadata">[];
+  collapsibleHeadings?: boolean;
+  onBodyChange?: (next: string, previous: string) => void;
 }) {
   const match = conceptMatcher(definitions);
   const noteTerms = new Set<string>();
@@ -201,12 +172,16 @@ export default function Markdown({
         urlTransform={(url) =>
           url.startsWith("attachment:") ? url : defaultUrlTransform(url)
         }
-        remarkPlugins={[remarkGfm, remarkMath, titledBlocks]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={[remarkGfm, remarkMath, compactTaskLists, titledBlocks]}
+        rehypePlugins={[rehypeKatex, ...(collapsibleHeadings ? [readingHeadingSections] : [])]}
         components={{
+          section: ({node, children, ...props}) => node?.properties.dataHeadingSection
+            ? <ReadingHeadingSection>{children}</ReadingHeadingSection>
+            : <section {...props}>{children}</section>,
           input: ({ checked }) => (
             <input
               type="checkbox"
+              className="note-task-circle"
               checked={checked}
               readOnly
               disabled
@@ -260,6 +235,25 @@ export default function Markdown({
                   {children}
                 </AttachmentMedia>
               );
+            if (href?.startsWith("#definition:")) {
+              let id = "";
+              try {
+                id = decodeURIComponent(href.slice(12));
+              } catch {}
+              const entry = definitions.find((d) => d.id === id && !d.trashed);
+              return entry ? (
+                <button
+                  type="button"
+                  className="concept"
+                  title={entry.definition}
+                  onClick={() => onDefinition?.(entry.id)}
+                >
+                  {children}
+                </button>
+              ) : (
+                <span title="Definition unavailable">{children}</span>
+              );
+            }
             if (href?.startsWith("#ai-ref:"))
               return (
                 <button
@@ -320,7 +314,9 @@ export default function Markdown({
               </a>
             );
           },
-          img: ({ src, alt }) => {
+          img: ({ src, alt, node }) => {
+            const range = onBodyChange ? pictureSource(body, transformed, node?.position?.start.offset, node?.position?.end.offset) : undefined;
+            const remove = range && onBodyChange ? () => onBodyChange(body.slice(0, range.from) + body.slice(range.to), body) : undefined;
             const asset =
               typeof src === "string"
                 ? findAttachment(attachments, src, fromPath)
@@ -332,6 +328,7 @@ export default function Markdown({
                   demo={demo}
                   publicBase={publicAssetBase}
                   image
+                  onDelete={remove}
                 >
                   {alt}
                 </AttachmentMedia>
@@ -340,11 +337,10 @@ export default function Markdown({
               (src.startsWith("blob:") ||
                 src.startsWith("/api/attachments/") ||
                 remoteImages) ? (
-              <img
+              <Picture
                 src={src}
                 alt={alt ?? ""}
-                loading="lazy"
-                referrerPolicy="no-referrer"
+                onDelete={remove}
               />
             ) : (
               <span className="image-placeholder">
@@ -368,6 +364,7 @@ export default function Markdown({
               return (
                 <NoteModule
                   readOnly
+                  pdfAssets={{attachments,demo,fromPath,publicBase:publicAssetBase}}
                   block={{
                     id: "preview",
                     language: "module",

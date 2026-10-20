@@ -4,6 +4,18 @@ These changes are available in the source/dev app. The previously built 1.0.2 de
 
 ## Files and navigation
 
+Opening a note replaces the active header tab. To keep the current tab and add another, right-click a note and choose **Open in new tab**, the first menu option. Opening an already open note activates its existing tab. Replacing a tab preserves saved edits and note navigation history.
+
+### Settings and note typography
+
+Settings opens above the whole workspace with a blurred backdrop. Close it with the top-right X, Escape, or a click outside the popup. **Appearance → Note titles & headings** provides Professional (the default), Editorial, Academic, Technical, and Friendly font presets with previews. The selection applies immediately to note titles and headings in Live and Reading modes, leaves body text unchanged, and is saved with the workspace.
+
+### Nested definitions and note locations
+
+Creating a definition from selected text opens a compact **Define** popup with the explanation field focused. **Enter** saves, **Shift+Enter** adds a line, and **Escape** cancels. While writing a definition, other defined words and aliases are outlined. Click one to open its meaning, or select a new word and right-click (or choose **Define** above the selection) to define it in a smaller popup. The parent draft stays open. Definitions created this way inherit the parent's collections; the full dictionary form still provides collection and alias controls.
+
+Opening a dictionary entry shows **View in notes** with a separate snippet and line number for each use. Clicking an occurrence opens that note and selects and scrolls to that exact word, including repeated uses in the same note. Matches respect collection-specific meanings and explicit definition links; code examples and deleted or archived notes are excluded.
+
 Right-click a file and choose **Open file to the right**. Click either pane to make it active; subsequent file opens from the sidebar use that pane. The active pane has an accent outline and header. Each pane has its own Back/Forward history, saved with the workspace layout. Opening a different note after going Back starts a new history branch.
 
 The file tab strip has a thin horizontal scrollbar when tabs overflow. Mouse-wheel scrolling over the strip moves through the tabs, and the active tab is brought into view.
@@ -14,9 +26,15 @@ The top toolbar contains Study material and Study Tools. Study Tools offers stud
 
 Generation does not move the reader's scroll position. The down-arrow button jumps to the bottom on request. History opens a searchable popup of saved conversations. Failed/stopped requests keep the user's question and can be retried. A selected passage can be attached using the fourth selection-toolbar action, Add to Chat.
 
-Requests require a signed-in account and explicit selected-context sharing. Device workspaces send the selected local material rather than looking up unrelated cloud note IDs. Folder requests cover all selected text up to 200,000 characters, split into bounded provider requests; larger selections receive an explicit error. Each section consumes the existing AI allowance. Hard cards require application and inference rather than giveaway topic names; generated sets can be reviewed, edited, and saved to Review.
+Requests require explicit selected-context sharing. Local material can be studied without signing in; private cloud material still requires authentication. Folder requests cover all selected text up to 200,000 characters, split into bounded provider requests; larger selections receive an explicit error. One study request consumes one request allowance and reserves processing capacity for every section before generation. The free default is 100 requests per UTC day, with additional processing and abuse limits; see [free-ai-chat.md](free-ai-chat.md). Hard cards require application and inference rather than giveaway topic names; generated sets can be reviewed, edited, and saved to Review.
 
 ## Code blocks
+
+### Pasting Mermaid diagrams
+
+Paste a complete fenced `mermaid` block into a note. Live mode automatically displays the diagram; **Edit diagram** opens its source and **Apply diagram** updates the preview. Source mode retains the Markdown, and Reading mode displays the same diagram. Rich clipboard code blocks labelled Mermaid are also supported. Pasting within an existing code example stays literal. Invalid diagrams retain their original text so they can be corrected. Paste and deletion support the editor's normal undo, and diagrams are saved with the note.
+
+### Running code
 
 Right-click in the writing editor and choose **Add code block**. Live mode displays an editable code cell with syntax highlighting, line numbers, indentation, bracket completion, Run/Stop, output, Copy, collapse, and Add to Chat. Selecting code before Add to Chat attaches that selection; otherwise it attaches the whole cell.
 

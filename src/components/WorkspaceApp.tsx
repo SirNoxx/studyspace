@@ -1,4 +1,9 @@
 "use client";
+import PDFImportPrompt, {choosePDFImport} from "./PDFImportPrompt";
+import {pdfModule} from "@/lib/pdf-module";
+import { placeAttachment, type AttachmentPlacement } from "@/lib/attachment-placement";
+import { workbookReferences } from '@/lib/spreadsheets/references';
+import { includeLinkedDefinitions } from "@/lib/markdown";
 import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
 import {
   useCallback,
@@ -12,11 +17,13 @@ import {
 import dynamic from "next/dynamic";
 import { produce } from "immer";
 import {
+  Users,
   BookOpen,
   Library,
   Search,
   Bookmark,
   CalendarDays,
+  CalendarCheck,
   Layers,
   Compass,
   Settings,
@@ -71,6 +78,7 @@ import {
   Paperclip,
 } from "lucide-react";
 import WorkspaceManager from "./WorkspaceManager";
+import { type CloudAccount } from "@/lib/device";
 import { MessageBadge, ProfileAvatar } from "./social/Messages";
 import { ModulesButton } from "./ModuleGallery";
 import { moduleText } from "@/lib/modules";
@@ -116,6 +124,7 @@ import { IconButton, SymbolIcon, Menu, Empty, Modal } from "./ui";
 import Markdown from "./Markdown";
 import type { EditorHandle } from "./Editor";
 import TextContextMenu from "./TextContextMenu";
+import type { ModuleTextAction } from "@/lib/module-text";
 import Dialogs from "./WorkspaceDialogs";
 import {
   JournalIcon,
@@ -132,6 +141,9 @@ import {
 } from "@/lib/tree";
 import Inspector from "./Inspector";
 import WorkspaceViews from "./WorkspaceViews";
+import { noteHeadingStyle } from "@/lib/note-typography";
+import { openNoteTabs } from "@/lib/note-tabs";
+import TabSidebar, { type SidebarRequest } from "./TabSidebar";
 import SelectionToolbar from "./SelectionToolbar";
 import NoteTranscripts, { useTranscriptImport } from "./NoteTranscripts";
 import SideNotePane from "./SideNotePane";
@@ -159,6 +171,7 @@ export type DialogState = {
   [key: string]: unknown;
 } | null;
 export interface AppContext {
+  collaboration?: SharedSession;
   blockAction?: (
     action: BlockAction,
     block: StudyCodeBlock,
@@ -168,10 +181,12 @@ export interface AppContext {
   mutate: Mutate;
   demo: boolean;
   account: string;
+  cloudAccount?: CloudAccount | null;
   active?: Note;
   focus: string | null;
   setFocus: (id: string | null) => void;
   openNote: (id: string, newTab?: boolean) => void;
+  openNoteAt: (id: string, from: number, to: number, expected: string) => void;
   addNote: (parentId?: string) => void;
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
@@ -185,7 +200,7 @@ export interface AppContext {
   signOut: () => Promise<void>;
   selection: string;
   editor: React.MutableRefObject<EditorHandle | null>;
-  attach: (files: File[], noteId?: string) => Promise<void>;
+  attach: (files: File[], noteId?: string, placement?: AttachmentPlacement) => Promise<void>;
   importYoutube?: (url: string, noteId: string, retry?: boolean) => void;
   pickStudyFolder?: (choose: (id: string) => void, cancel?: () => void) => void;
   exportData: (options?: {
@@ -200,6 +215,7 @@ const ribbon = [
   { id: "search", label: "Search", icon: Search },
   { id: "bookmarks", label: "Bookmarks", icon: Bookmark },
   { id: "journal", label: "Journal", icon: JournalIcon },
+  { id: "weekly-checkups", label: "Weekly checkups", icon: CalendarCheck },
   { id: "review", label: "Review", icon: Layers },
   { id: "discover", label: "Discover", icon: Compass },
   { id: "shared", label: "Shared collections", icon: Globe },
@@ -212,17 +228,27 @@ const inspectorTabs = [
   { id: "annotations", label: "Annotations & Q&A", icon: MessageSquare },
   { id: "ai", label: "AI Study Guide", icon: Sparkles },
 ];
+import type { SharedSession } from "@/lib/shared/session";
+
 export default function WorkspaceApp({
   demo = false,
   account,
   localKey = "demo",
   onWorkspaceSwitch,
+  cloudAccount,
+  collaboration,
 }: {
+  collaboration?: SharedSession;
   demo?: boolean;
   account: string;
   localKey?: string;
   onWorkspaceSwitch?: (id: string) => void;
+  cloudAccount?: CloudAccount | null;
 }) {
+  const routePrefix = collaboration
+    ? `/${location.pathname.split("/")[1]}/shared/${collaboration.id}`
+    : `/${demo ? "demo" : "w"}`;
+  const readOnly = !!collaboration?.readOnly;
   const draggedTreeId = useRef<string | null>(null);
   const [blockDestination, setBlockDestination] = useState<{
     block: StudyCodeBlock;
@@ -241,6 +267,7 @@ export default function WorkspaceApp({
   } | null>(null);
   const [activePane, setActivePane] = useState<"left" | "right">("left");
   const [rightSelection, setRightSelection] = useState("");
+  const [sidebarRequest, setSidebarRequest] = useState<SidebarRequest>();
   const rightEditor = useRef<EditorHandle | null>(null);
   const [chatSelection, setChatSelection] =
     useState<AppContext["chatSelection"]>();
@@ -259,6 +286,7 @@ export default function WorkspaceApp({
     [focus, commitFocus] = useState<string | null>(null),
     [expanded, setExpanded] = useState<string[]>([]),
     [view, setViewState] = useState("collections"),
+    [settingsOpen, setSettingsOpen] = useState(false),
     [inspector, setInspector] = useState("dictionary"),
     [left, setLeft] = useState(true),
     [right, setRight] = useState(true),
@@ -292,6 +320,8 @@ export default function WorkspaceApp({
       id: string;
     } | null>(null);
   const editor = useRef<EditorHandle | null>(null),
+    activeTabId = useRef(activeId),
+    settingsTrigger = useRef<HTMLElement | null>(null),
     titleInput = useRef<HTMLInputElement>(null),
     newTitleId = useRef<string | null>(null),
     saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -304,6 +334,7 @@ export default function WorkspaceApp({
     noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     scrolls = useRef(new Map<string, number>()),
     scroller = useRef<HTMLDivElement>(null);
+  activeTabId.current = activeId;
   const activeContainer = w?.notes.find((n) => n.id === activeId)?.containerId;
   useEffect(() => {
     if (!dialog && view === "collections" && newTitleId.current === activeId) {
@@ -334,6 +365,21 @@ export default function WorkspaceApp({
     }
   }, [w?.settings.onboardingComplete]);
   const setDialog = (value: DialogState) => {
+    if (
+      collaboration?.readOnly &&
+      value &&
+      ![
+        "definition-detail",
+        "review-preview",
+        "citation-detail",
+        "pdf",
+        "export",
+        "history",
+        "switcher",
+        "palette",
+      ].includes(value.type)
+    )
+      return;
     flushRender();
     if (value?.type === "container" && value.kind === "folder") {
       addFolder(String(value.parentId ?? focus ?? general(wRef.current!).id));
@@ -351,8 +397,15 @@ export default function WorkspaceApp({
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, tabs.length]);
   const definitionsForNote = useMemo(
-    () => (w && activeContainer ? contextDefinitions(w, activeContainer) : []),
-    [w?.definitions, w?.containers, activeContainer],
+    () =>
+      w && activeContainer
+        ? includeLinkedDefinitions(
+            w.notes.find((n) => n.id === activeId)?.body ?? "",
+            contextDefinitions(w, activeContainer),
+            w.definitions,
+          )
+        : [],
+    [w?.definitions, w?.containers, w?.notes, activeId, activeContainer],
   );
   const toast = useCallback((message: string) => {
     setNotice(message);
@@ -360,12 +413,19 @@ export default function WorkspaceApp({
     noticeTimer.current = setTimeout(() => setNotice(""), 5000);
   }, []);
   const setView = (v: string) => {
+    if (v === "settings") {
+      settingsTrigger.current = document.activeElement as HTMLElement;
+      setSettingsOpen(true);
+      return;
+    }
+    setSettingsOpen(false);
+    if (v === "planner" || v === "calendar") v = "collections";
     setViewState(v);
     if (innerWidth < 800) setLeft(false);
     history.pushState(
       { ...history.state, studyspaceFocus: focus },
       "",
-      `/${demo ? "demo" : "w"}/${v === "collections" ? "" : v}`,
+      `${routePrefix}/${v === "collections" ? "" : v}`,
     );
   };
   const collectionFocus = (id: string | null) =>
@@ -412,18 +472,19 @@ export default function WorkspaceApp({
           : [],
       },
       "",
-      `/${demo ? "demo" : "w"}${id ? "/collection/" + id : ""}`,
+      `${routePrefix}${id ? "/collection/" + id : ""}`,
     );
   };
   const returnFromCollection = () => {
     const trail = history.state?.studyspaceFocusReturn ?? [];
     const previous = trail.at(-1);
-    const prefix = `/${demo ? "demo" : "w"}`;
+    const prefix = routePrefix;
     const current = wRef.current?.containers.find((c) => c.id === focus);
     // Old bookmarks have no navigation trail: return to the enclosing collection.
     const parent = collectionFocus(current?.parentId ?? null);
     const validPrevious =
       previous &&
+      !["planner", "calendar"].includes(previous.view) &&
       (previous.url === prefix ||
         previous.url.startsWith(prefix + "/") ||
         previous.url.startsWith(prefix + "?"));
@@ -463,7 +524,7 @@ export default function WorkspaceApp({
   const openNote = useCallback(
     (
       id: string,
-      newTab = true,
+      newTab = false,
       target: "left" | "right" = activePane,
       recordHistory = true,
     ) => {
@@ -498,21 +559,11 @@ export default function WorkspaceApp({
       if (scroller.current)
         scrolls.current.set(activeId, scroller.current.scrollTop);
       setActiveId(id);
-      setTabs((old) =>
-        old.includes(id)
-          ? old
-          : newTab
-            ? [...old, id]
-            : [...old.slice(0, -1), id],
-      );
+      setTabs((old) => openNoteTabs(old, activeId, id, newTab));
       setViewState("collections");
       setSelection("");
       if (innerWidth < 800) setLeft(false);
-      history.pushState(
-        { ...history.state },
-        "",
-        `/${demo ? "demo" : "w"}/note/${id}`,
-      );
+      history.pushState({ ...history.state }, "", `${routePrefix}/note/${id}`);
       requestAnimationFrame(() => {
         if (scroller.current)
           scroller.current.scrollTop = scrolls.current.get(id) ?? 0;
@@ -520,31 +571,54 @@ export default function WorkspaceApp({
     },
     [activeId, rightNoteId, activePane, demo],
   );
+  const [noteJump, setNoteJump] = useState<{ id: string; from: number; to: number; expected: string } | null>(null);
+  useEffect(() => {
+    if (!noteJump) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const deadline = Date.now() + 5000;
+    const reveal = () => {
+      if (editor.current?.revealRange(noteJump.id, noteJump.from, noteJump.to, noteJump.expected)) {
+        setNoteJump(null);
+      } else if (Date.now() < deadline) timer = setTimeout(reveal, 50);
+      else { setNoteJump(null); toast("The passage changed. Search this note for the term."); }
+    };
+    // Wait for the note switch, editor mode and saved scroll restoration.
+    timer = setTimeout(reveal, 50);
+    return () => clearTimeout(timer);
+  }, [noteJump]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const state = demo
-          ? await loadLocal(
-              new URLSearchParams(location.search).get("sample") === "1",
-              localKey,
-            )
-          : await fetch("/api/workspace").then(async (r) => {
-              const d = await r.json();
-              if (!r.ok) throw new Error(d.error);
-              return d as Workspace;
-            });
+        const state = collaboration
+          ? await collaboration.initial()
+          : demo
+            ? await loadLocal(
+                new URLSearchParams(location.search).get("sample") === "1",
+                localKey,
+              )
+            : await fetch("/api/workspace").then(async (r) => {
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error);
+                return d as Workspace;
+              });
         const db = await localDB();
         const nav = await db.get("navigation", account + ":layout");
-        const recovered = (await db.get("drafts", account + ":workspace")) as
-          Workspace | undefined;
+        const recovered = (
+          collaboration
+            ? undefined
+            : await db.get("drafts", account + ":workspace")
+        ) as Workspace | undefined;
         if (cancelled) return;
         Object.assign(state, normalizeWorkspace(state));
-        if (!demo && !state.settings.onboardingComplete) setTour(true);
+        if (!collaboration && !demo && !state.settings.onboardingComplete)
+          setTour(true);
         wRef.current = state;
         savedBase.current = state;
         setW(state);
-        setMode(state.settings.defaultMode);
+        setMode(
+          collaboration?.readOnly ? "reading" : state.settings.defaultMode,
+        );
         if (nav) {
           setFocusState(nav.focus);
           setExpanded(nav.expanded ?? []);
@@ -591,12 +665,19 @@ export default function WorkspaceApp({
         if (history.state && "studyspaceFocus" in history.state)
           setFocusState(history.state.studyspaceFocus);
         const path = location.pathname.split("/");
+        if (collaboration) path.splice(2, 2);
         if (path[2] === "note" && state.notes.some((n) => n.id === path[3])) {
           setActiveId(path[3]);
           setTabs((t) => [...new Set([...t, path[3]])]);
         } else if (path[2] === "collection") setFocusState(path[3]);
-        else if (path[2]) setViewState(path[2]);
-        if (!nav && state.notes.length) {
+        else if (path[2] === "planner" || path[2] === "calendar") {
+          setViewState("collections");
+          history.replaceState(history.state, "", `${routePrefix}/`);
+        } else if (path[2] === "settings") {
+          setSettingsOpen(true);
+          history.replaceState(history.state, "", `${routePrefix}/`);
+        } else if (path[2]) setViewState(path[2]);
+        if (!nav && state.notes.length && path[2] !== "note") {
           const n = state.notes[0];
           setActiveId(n.id);
           setTabs([n.id]);
@@ -608,7 +689,13 @@ export default function WorkspaceApp({
             JSON.stringify({ ...state, revision: 0 })
         )
           setRecovery(recovered);
-        setSaveStatus(demo ? "Saved on this device" : "Saved to cloud");
+        setSaveStatus(
+          collaboration
+            ? "Live · all changes saved"
+            : demo
+              ? "Saved on this device"
+              : "Saved to cloud",
+        );
         if (innerWidth < 800) {
           setLeft(false);
           setRight(false);
@@ -622,6 +709,27 @@ export default function WorkspaceApp({
       cancelled = true;
     };
   }, [demo, account]);
+  useEffect(() => {
+    if (!collaboration) return;
+    const stop = collaboration.subscribe((next) => {
+      if (collaboration.error) {
+        setLoadingError(collaboration.error);
+        wRef.current = null;
+        setW(null);
+        return;
+      }
+      wRef.current = next;
+      setW(next);
+      if (collaboration.readOnly) setMode("reading");
+    });
+    const status = collaboration.onStatus(setSaveStatus);
+    const notice = collaboration.onNotice(toast);
+    return () => {
+      stop();
+      status();
+      notice();
+    };
+  }, [collaboration]);
   const persist = useCallback(async () => {
     if (
       saving.current ||
@@ -633,24 +741,39 @@ export default function WorkspaceApp({
     saving.current = true;
     pending.current = false;
     const snapshot = wRef.current;
-    setSaveStatus(demo ? "Saving on this device…" : "Saving…");
+    setSaveStatus(
+      collaboration
+        ? "Syncing with collaborators…"
+        : demo
+          ? "Saving on this device…"
+          : "Saving…",
+    );
     try {
-      const revision = demo
-        ? await persistLocal(snapshot, snapshot.revision, localKey)
-        : await saveRemote(
-            snapshot,
-            snapshot.revision,
-            savedBase.current ?? undefined,
-          );
+      const revision = collaboration
+        ? await collaboration.flush()
+        : demo
+          ? await persistLocal(snapshot, snapshot.revision, localKey)
+          : await saveRemote(
+              snapshot,
+              snapshot.revision,
+              savedBase.current ?? undefined,
+            );
       savedBase.current = { ...snapshot, revision };
       if (wRef.current) {
         wRef.current = { ...wRef.current, revision };
         setW(wRef.current);
       }
       if (!pending.current) {
-        setSaveStatus(demo ? "Saved on this device" : "Saved to cloud");
+        setSaveStatus(
+          collaboration
+            ? "Live · all changes saved"
+            : demo
+              ? "Saved on this device"
+              : "Saved to cloud",
+        );
         await (await localDB()).delete("drafts", account + ":workspace");
-      } else await saveDraft(account, "workspace", wRef.current);
+      } else if (!collaboration)
+        await saveDraft(account, "workspace", wRef.current);
     } catch (e) {
       pending.current = true;
       const msg = (e as Error).message;
@@ -676,7 +799,7 @@ export default function WorkspaceApp({
           if (!saving.current && navigator.onLine) void persist();
         }, 3000);
     }
-  }, [demo, account, toast, conflict]);
+  }, [demo, account, toast, conflict, collaboration]);
   useEffect(() => {
     const host = window as Window & {
       __studyspaceFlushForClose?: () => Promise<boolean>;
@@ -685,6 +808,13 @@ export default function WorkspaceApp({
       const deadline = Date.now() + 8000;
       let timeout: ReturnType<typeof setTimeout>;
       const save = async () => {
+        if (collaboration) {
+          try {
+            await collaboration.flush();
+          } catch {
+            return false;
+          }
+        }
         for (let attempt = 0; attempt < 3; attempt++) {
           while (saving.current && Date.now() < deadline)
             await new Promise((resolve) => setTimeout(resolve, 50));
@@ -702,19 +832,26 @@ export default function WorkspaceApp({
         }),
       ]).finally(() => clearTimeout(timeout));
     };
+    const previousFlush = host.__studyspaceFlushForClose;
     host.__studyspaceFlushForClose = flush;
     return () => {
       if (host.__studyspaceFlushForClose === flush)
-        delete host.__studyspaceFlushForClose;
+        host.__studyspaceFlushForClose = previousFlush;
     };
   }, [persist]);
   const mutate: Mutate = useCallback(
     (fn, message, deferRender = false) => {
       if (!wRef.current) return;
+      if (collaboration?.readOnly) {
+        toast("This collection is read-only.");
+        return;
+      }
       try {
+        const previous = wRef.current;
         const next = produce(wRef.current, (draft) => {
           fn(draft as Workspace);
         });
+        collaboration?.change(next, previous);
         wRef.current = next;
         if (renderTimer.current) clearTimeout(renderTimer.current);
         if (deferRender)
@@ -724,12 +861,19 @@ export default function WorkspaceApp({
           }, 120);
         else setW(next);
         pending.current = true;
-        setSaveStatus(demo ? "Saving on this device…" : "Saving…");
+        setSaveStatus(
+          collaboration
+            ? "Syncing with collaborators…"
+            : demo
+              ? "Saving on this device…"
+              : "Saving…",
+        );
         if (draftTimer.current) clearTimeout(draftTimer.current);
         draftTimer.current = setTimeout(() => {
-          void saveDraft(account, "workspace", wRef.current).catch(() =>
-            toast("Device recovery storage is full. Export your work."),
-          );
+          if (!collaboration)
+            void saveDraft(account, "workspace", wRef.current).catch(() =>
+              toast("Device recovery storage is full. Export your work."),
+            );
         }, 250);
         if (saveTimer.current) clearTimeout(saveTimer.current);
         saveTimer.current = setTimeout(() => void persist(), 700);
@@ -738,7 +882,7 @@ export default function WorkspaceApp({
         toast((e as Error).message);
       }
     },
-    [account, persist, toast, demo],
+    [account, persist, toast, demo, collaboration],
   );
   useEffect(() => {
     if (!loaded.current) return;
@@ -791,16 +935,31 @@ export default function WorkspaceApp({
   useEffect(() => {
     const back = () => {
       const parts = location.pathname.split("/");
+      if (!collaboration && document.querySelector(".shared-workspace-overlay"))
+        return;
+      if (collaboration) {
+        if (parts[2] !== "shared" || parts[3] !== collaboration.id) {
+          collaboration.exit();
+          return;
+        }
+        parts.splice(2, 2);
+      }
       if (history.state && "studyspaceFocus" in history.state)
         setFocusState(history.state.studyspaceFocus);
       else if (!parts[2]) setFocusState(null);
-      if (parts[2] === "note") {
+      setSettingsOpen(parts[2] === "settings");
+      if (parts[2] === "settings") {
+        history.replaceState(history.state, "", `${routePrefix}/`);
+      } else if (parts[2] === "note") {
         setActiveId(parts[3]);
-        setTabs((t) => [...new Set([...t, parts[3]])]);
+        setTabs((t) => openNoteTabs(t, activeTabId.current, parts[3]));
         setViewState("collections");
       } else if (parts[2] === "collection") {
         setFocusState(parts[3]);
         setViewState("collections");
+      } else if (parts[2] === "planner" || parts[2] === "calendar") {
+        setViewState("collections");
+        history.replaceState(history.state, "", `${routePrefix}/`);
       } else setViewState(parts[2] || "collections");
     };
     window.addEventListener("popstate", back);
@@ -808,7 +967,10 @@ export default function WorkspaceApp({
   }, []);
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
+      if (!collaboration && document.querySelector(".shared-workspace-overlay"))
+        return;
       if (e.defaultPrevented) return;
+      if (settingsOpen) return;
       if (
         (e.ctrlKey || e.metaKey) &&
         e.key.toLowerCase() === "k" &&
@@ -859,7 +1021,7 @@ export default function WorkspaceApp({
     const online = () => void persist();
     window.addEventListener("online", online);
     const unload = (e: BeforeUnloadEvent) => {
-      if (pending.current) {
+      if (pending.current || collaboration?.unsaved) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -871,7 +1033,7 @@ export default function WorkspaceApp({
       window.removeEventListener("online", online);
       window.removeEventListener("beforeunload", unload);
     };
-  }, [dialog, zen, persist, activeId, view]);
+  }, [dialog, zen, persist, activeId, view, settingsOpen]);
   const active = w?.notes.find((n) => n.id === activeId && !n.trashed),
     rightNote = w?.notes.find((n) => n.id === rightNoteId && !n.trashed),
     focused = w?.containers.find(
@@ -882,6 +1044,12 @@ export default function WorkspaceApp({
         !c.trashed,
     ),
     activeRoot = active && w ? rootOf(w, active.containerId) : undefined;
+  // Quick notes use the full editor, but belong to their own navigation section.
+  const editingNote = activePane === "right" && rightNote ? rightNote : active;
+  const navigationView =
+    !collaboration && view === "collections" && editingNote?.kind === "quick"
+      ? "quick-notes"
+      : view;
   const closeTab = (id: string) => {
     setClosedTabs((old) => [...old, id]);
     const next = tabs.filter((t) => t !== id);
@@ -905,7 +1073,7 @@ export default function WorkspaceApp({
     if (index < 0) return;
     const id = noteNavigation[pane].ids[index];
     setNoteNavigation((old) => ({ ...old, [pane]: { ...old[pane], index } }));
-    openNote(id, true, pane, false);
+    openNote(id, false, pane, false);
   };
   const addNote = (parentId?: string) => {
     let id = "";
@@ -1007,7 +1175,7 @@ export default function WorkspaceApp({
   ) => {
     if (!wRef.current) return;
     try {
-      if (!demo && !options.noteId) {
+      if (!demo && !collaboration && !options.noteId && !wRef.current.notes.some(n => workbookReferences(n.body).length)) {
         const r = await fetch("/api/jobs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1030,10 +1198,15 @@ export default function WorkspaceApp({
       });
       const bytes = await exportWorkspace(wRef.current, {
         ...options,
+        loadWorkbook: async (id) => {
+          if(collaboration){const {readSharedWorkbook}=await import('@/lib/spreadsheets/shared-store');const note=wRef.current!.notes.find(n=>workbookReferences(n.body).some(ref=>ref.data.workbookId===id));if(!note)return undefined;return (await readSharedWorkbook({scope:account,collection:collaboration.id,note:note.id},id)).record?.snapshot;}
+          const { loadWorkbook } = await import("@/lib/spreadsheets/store");
+          return (await loadWorkbook(account, id))?.snapshot;
+        },
         onProgress: (value, message) =>
           setExportProgress({ value, message, busy: true }),
         loadAsset: async (a) => {
-          if (demo) {
+          if (demo && !collaboration) {
             const blob = (await (await localDB()).get("assets", a.id)) as
               Blob | undefined;
             if (!blob) throw new Error("Missing attachment: " + a.filename);
@@ -1066,19 +1239,35 @@ export default function WorkspaceApp({
       toast((e as Error).message);
     }
   };
-  const attach = async (files: File[], noteId = activeId) => {
+  const attach = async (files: File[], noteId = activeId, placement?: AttachmentPlacement) => {
     const n = wRef.current?.notes.find((n) => n.id === noteId);
     if (!n) {
       toast("Open a note before adding attachments.");
       return;
     }
+    const pdfFiles=files.filter(file=>/\.pdf$/i.test(file.name));
+    // Importing into an existing PDF module already expresses the desired format.
+    const pdfMode=pdfFiles.length ? placement?.replaceBlockId ? "module" : await choosePDFImport(pdfFiles.map(file=>file.name),account) : null;
+    if(pdfFiles.length && !pdfMode)return;
+    const insert = (body: string, markdown: string) => {
+      const result = placeAttachment(body, placement, markdown);
+      placement = result.placement;
+      return result.body;
+    };
     const { sha256 } = await import("@/lib/transfer");
     for (const file of files) {
       try {
+        const isPDF=/\.pdf$/i.test(file.name);
+        let pdfText="";
         if (file.size > 50 * 1024 * 1024)
           throw new Error(file.name + " exceeds 50 MB.");
         if (!/\.(pdf|png|jpe?g|webp|gif|mp3|wav|mp4|md|txt)$/i.test(file.name))
           throw new Error("Unsupported attachment type.");
+        if(isPDF && pdfMode==="markdown") {
+          const {documentToMarkdown}=await import("@/lib/document-conversion");
+          pdfText=(await documentToMarkdown(new Uint8Array(await file.arrayBuffer()),"pdf")).markdown;
+        }
+        const pdfBody=(assetId:string)=>pdfMode==="module" ? pdfModule("attachment:"+assetId,file.name) : pdfText+`\n\n[Original PDF](attachment:${assetId})`;
         toast("Uploading " + file.name + "…");
         const id = uid(),
           hash = await sha256(new Uint8Array(await file.arrayBuffer()));
@@ -1088,6 +1277,24 @@ export default function WorkspaceApp({
           id +
           "/" +
           file.name.replace(/[^\p{L}\p{N}._-]/gu, "_");
+        if (collaboration) {
+          const asset = await collaboration.upload(file);
+          mutate((s) => {
+            s.attachments.push(asset);
+            const note = s.notes.find((x) => x.id === n.id);
+            if (!note || note.trashed) throw Error("The original note is no longer available.");
+            saveNote(
+              s,
+              n.id,
+              note.revision,
+              {
+                body: insert(note.body, isPDF ? pdfBody(asset.id) : `${file.type.startsWith("image/") ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "_")}](attachment:${asset.id})`),
+              },
+              "Attachment",
+            );
+          });
+          continue;
+        }
         if (demo) await (await localDB()).put("assets", file, id);
         else {
           const { error } = await browserClient()
@@ -1099,21 +1306,20 @@ export default function WorkspaceApp({
           s.attachments.push({
             id,
             filename: file.name,
-            mime: file.type,
+            mime: isPDF ? "application/pdf" : file.type,
             size: file.size,
             hash,
             key,
             createdAt: now(),
           });
-          const note = s.notes.find((x) => x.id === n.id)!;
+          const note = s.notes.find((x) => x.id === n.id);
+            if (!note || note.trashed) throw Error("The original note is no longer available.");
           saveNote(
             s,
             n.id,
             note.revision,
             {
-              body:
-                note.body +
-                `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`,
+              body: insert(note.body, isPDF ? pdfBody(id) : `\n${/^image\/(png|jpeg|webp|gif)$/.test(file.type) ? "!" : ""}[${file.name.replace(/[\\[\]]/g, "\\$&")}](attachment:${id})\n`.trim()),
             },
             "Attachment",
           );
@@ -1124,6 +1330,31 @@ export default function WorkspaceApp({
     }
   };
   const importYoutube = useTranscriptImport(() => wRef.current, mutate, toast);
+  useEffect(() => {
+    if (!w) return;
+    const action = (event: Event) => {
+      const target = event.target as HTMLElement;
+      if (!!target.closest(".shared-workspace-overlay") !== !!collaboration || collaboration?.readOnly) return;
+      const noteId = target.closest<HTMLElement>("[data-note-id]")?.dataset.noteId;
+      if (!noteId || !w.notes.some(n => n.id === noteId && !n.trashed)) return;
+      if (event.type === "studyspace:module-definition") {
+        const detail = (event as CustomEvent<{blockId: string; code: string}>).detail;
+        setDialog({type: "module-definition", sourceId: noteId, blockId: detail.blockId, code: detail.code});
+        return;
+      }
+      const detail = (event as CustomEvent<ModuleTextAction>).detail;
+      if (detail.action === "chat") { ctx.openChat(detail.text, noteId); return; }
+      setDialog({ type: detail.action, value: detail.action === "review-card" ? "" : detail.text,
+        answer: detail.action === "review-card" ? detail.text : undefined, passage: detail.text,
+        sourceId: noteId, moduleReplace: detail.replace });
+    };
+    window.addEventListener("studyspace:module-text-action", action);
+    window.addEventListener("studyspace:module-definition", action);
+    return () => {
+      window.removeEventListener("studyspace:module-text-action", action);
+      window.removeEventListener("studyspace:module-definition", action);
+    };
+  }, [w, collaboration, activePane]);
   if (!w)
     return (
       <div className="loading-screen">
@@ -1138,6 +1369,7 @@ export default function WorkspaceApp({
       </div>
     );
   const ctx: AppContext = {
+    collaboration,
     blockAction: (action, block, noteId) => {
       if (action === "add") setBlockDestination({ block, noteId });
       if (action === "study") {
@@ -1178,6 +1410,7 @@ export default function WorkspaceApp({
       setLeft(true);
     },
     openJournalNote: (id) => {
+      setSidebarRequest({ kind: "journal", id, sequence: Date.now() });
       flushRender();
       setActiveId(id);
       setTabs((old) => [...new Set([...old, id])]);
@@ -1205,6 +1438,7 @@ export default function WorkspaceApp({
     mutate,
     demo,
     account,
+    cloudAccount,
     signOut: async () => {
       await persist();
       if (pending.current || saving.current || conflictRef.current)
@@ -1213,6 +1447,17 @@ export default function WorkspaceApp({
         );
       if (draftTimer.current) clearTimeout(draftTimer.current);
       await clearAccountCache(account);
+      const identity = cloudAccount?.id ?? (!demo ? account : null);
+      if (identity)
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const key = sessionStorage.key(i);
+          if (key?.startsWith(`studyspace:shared-draft:${identity}:`))
+            sessionStorage.removeItem(key);
+        }
+      if (window.studyspaceDevice) {
+        await window.studyspaceDevice.signOut();
+        return;
+      }
       const { error } = await browserClient().auth.signOut();
       if (error) throw error;
       location.href = "/auth";
@@ -1243,6 +1488,12 @@ export default function WorkspaceApp({
     focus,
     setFocus,
     openNote,
+    openNoteAt: (id, from, to, expected) => {
+      setDialog(null);
+      setMode(current => current === "reading" ? "live" : current);
+      openNote(id, false, "left");
+      setNoteJump({ id, from, to, expected });
+    },
     setDialog,
     setView,
     toast,
@@ -1281,7 +1532,30 @@ export default function WorkspaceApp({
   const itemActions = (id: string) => {
     const c = w.containers.find((c) => c.id === id),
       n = w.notes.find((n) => n.id === id);
+    const bookmarkAction = {
+      label: w.bookmarks.includes(id) ? "Remove bookmark" : "Bookmark",
+      icon: Bookmark,
+      action: () =>
+        mutate((s) => {
+          s.bookmarks = s.bookmarks.includes(id)
+            ? s.bookmarks.filter((x) => x !== id)
+            : [...s.bookmarks, id];
+        }),
+    };
+    const searchAction = {
+      label: "Search here",
+      icon: Search,
+      action: () => {
+        if (c) setFocusState(id);
+        setViewState("search");
+      },
+    };
     return [
+      ...(n ? [{
+        label: "Open in new tab",
+        icon: Plus,
+        action: () => openNote(id, true, "left"),
+      }] : []),
       ...(n && n.kind !== "quick"
         ? [
             {
@@ -1304,8 +1578,8 @@ export default function WorkspaceApp({
                     else pinNote(s, id);
                   },
                   isPinnedNote(w, id)
-                    ? "Note restored to its previous location."
-                    : "Note moved to Pinned notes.",
+                    ? "Note unpinned."
+                    : "Note pinned at the top of this folder.",
                 ),
             },
             "separator" as const,
@@ -1342,11 +1616,6 @@ export default function WorkspaceApp({
         ? [
             { label: "New note", icon: FileText, action: () => addNote(id) },
             {
-              label: "View attachments",
-              icon: Paperclip,
-              action: () => setDialog({ type: "folder-attachments", id }),
-            },
-            {
               label: "New folder",
               icon: FolderPlus,
               action: () =>
@@ -1367,7 +1636,9 @@ export default function WorkspaceApp({
               icon: Link2,
               action: () => setDialog({ type: "source", parentId: id }),
             },
+            bookmarkAction,
             "separator" as const,
+            searchAction,
           ]
         : []),
       {
@@ -1376,6 +1647,15 @@ export default function WorkspaceApp({
         action: () =>
           setDialog({ type: "rename", id, value: c?.title ?? n?.title }),
       },
+      ...(n
+        ? [
+            {
+              label: "Print & export…",
+              icon: Download,
+              action: () => setDialog({ type: "document-export", id: n.id }),
+            },
+          ]
+        : []),
       ...(!c?.system
         ? [
             {
@@ -1394,31 +1674,14 @@ export default function WorkspaceApp({
             if (n) setTimeout(() => openNote(copyId), 0);
           }, "Copy created."),
       },
-      {
-        label: w.bookmarks.includes(id) ? "Remove bookmark" : "Bookmark",
-        icon: Bookmark,
-        action: () =>
-          mutate((s) => {
-            s.bookmarks = s.bookmarks.includes(id)
-              ? s.bookmarks.filter((x) => x !== id)
-              : [...s.bookmarks, id];
-          }),
-      },
-      {
-        label: "Search here",
-        icon: Search,
-        action: () => {
-          if (c) setFocusState(id);
-          setViewState("search");
-        },
-      },
+      ...(n ? [bookmarkAction, searchAction] : []),
       {
         label: "Copy internal link",
         icon: Link,
         action: () => {
           void navigator.clipboard.writeText(
             location.origin +
-              `/${demo ? "demo" : "w"}/${c ? "collection" : "note"}/${id}`,
+              `${routePrefix}/${c ? "collection" : "note"}/${id}`,
           );
           toast("Internal link copied.");
         },
@@ -1740,6 +2003,9 @@ export default function WorkspaceApp({
                       {c.title}
                     </button>
                   )}
+                  {collaboration && c.parentId === null && (
+                    <Users size={14} aria-label="Shared with collaborators" />
+                  )}
                   {c.kind !== "folder" && (
                     <button
                       className="tree-open"
@@ -1818,7 +2084,7 @@ export default function WorkspaceApp({
                 }
               }}
               onAuxClick={(e) => {
-                if (e.button === 1) openNote(n.id, true);
+                if (e.button === 1) openNote(n.id);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -1859,6 +2125,9 @@ export default function WorkspaceApp({
                 </span>
               )}
               {w.bookmarks.includes(n.id) && <Bookmark size={11} />}
+              {n.metadata?.pinned === true && (
+                <Pin size={13} className="note-pin" role="img" aria-label="Pinned note" />
+              )}
             </div>
           );
         })}
@@ -1926,9 +2195,11 @@ export default function WorkspaceApp({
     <div
       className={
         "app-shell " +
+        (collaboration ? "shared-note-workspace " : "") +
+        (readOnly ? "workspace-readonly " : "") +
         (zen ? "zen " : "") +
         (left ? "left-open " : "") +
-        (right ? "right-open " : "")
+        (right && view !== "weekly-checkups" ? "right-open " : "")
       }
       style={
         {
@@ -1937,6 +2208,7 @@ export default function WorkspaceApp({
           "--right-width": rightWidth + "px",
           "--editor-size": w.settings.fontSize + "px",
           "--editor-line-height": w.settings.lineHeight,
+          ...noteHeadingStyle(w.settings.headingFont),
           "--writing-font":
             w.settings.fontFamily === "serif"
               ? "Georgia, serif"
@@ -1982,28 +2254,56 @@ export default function WorkspaceApp({
           )}
         </button>
         <div className="ribbon-main">
-          {ribbon.map((item) => (
+          {collaboration && (
             <IconButton
-              key={item.id}
-              label={item.label}
-              active={view === item.id}
-              onClick={() => {
-                if (item.id === "collections") {
-                  setViewState("collections");
-                  setLeft(true);
-                } else setView(item.id);
-              }}
+              label="Back to my workspace"
+              onClick={() =>
+                void collaboration
+                  .flush()
+                  .then(collaboration.exit)
+                  .catch((e) => toast(e.message))
+              }
             >
-              <item.icon size={20} />
-              {!w.settings.ribbonCompact && (
-                <span className="ribbon-label">{item.label}</span>
-              )}
-              {item.id === "review" &&
-                w.review.some(
-                  (r) => !r.suspended && r.schedule.due <= now(),
-                ) && <span className="ribbon-dot" />}
+              <ArrowLeft size={20} />
             </IconButton>
-          ))}
+          )}
+          {ribbon
+            .filter(
+              (item) =>
+                !collaboration ||
+                !["shared", "discover", "journal", "quick-notes", "weekly-checkups"].includes(
+                  item.id,
+                ),
+            )
+            .map((item) => (
+              <IconButton
+                key={item.id}
+                label={item.label}
+                active={navigationView === item.id}
+                onClick={() => {
+                  if (item.id === "collections") {
+                    if (
+                      view === "collections" &&
+                      navigationView === "quick-notes"
+                    ) {
+                      setActiveId("");
+                      setActivePane("left");
+                    }
+                    setView("collections");
+                    setLeft(true);
+                  } else setView(item.id);
+                }}
+              >
+                <item.icon size={20} />
+                {!w.settings.ribbonCompact && (
+                  <span className="ribbon-label">{item.label}</span>
+                )}
+                {item.id === "review" &&
+                  w.review.some(
+                    (r) => !r.suspended && r.schedule.due <= now(),
+                  ) && <span className="ribbon-dot" />}
+              </IconButton>
+            ))}
         </div>
         <div className="ribbon-bottom">
           <IconButton
@@ -2015,7 +2315,10 @@ export default function WorkspaceApp({
             {!w.settings.ribbonCompact && (
               <span className="ribbon-label">Messages</span>
             )}
-            <MessageBadge enabled={!demo} />
+            <MessageBadge
+              key={cloudAccount?.id ?? account}
+              enabled={!!cloudAccount || !demo}
+            />
           </IconButton>
           <IconButton
             label="Inbox"
@@ -2032,7 +2335,7 @@ export default function WorkspaceApp({
           </IconButton>
           <IconButton
             label="Settings"
-            active={view === "settings"}
+            active={settingsOpen}
             onClick={() => setView("settings")}
           >
             <Settings size={19} />
@@ -2046,7 +2349,8 @@ export default function WorkspaceApp({
             onClick={() => setView("profile")}
           >
             <ProfileAvatar
-              enabled={!demo}
+              key={cloudAccount?.id ?? account}
+              enabled={!!cloudAccount || !demo}
               fallback={w.settings.displayName.slice(0, 1).toUpperCase()}
             />
           </button>
@@ -2054,7 +2358,18 @@ export default function WorkspaceApp({
       </nav>
       {!zen && left && (
         <>
-          <aside className="explorer" aria-label="Collection explorer">
+          <aside
+            className="explorer"
+            aria-label={
+              view === "shared"
+                ? "Shared collection explorer"
+                : navigationView === "collections"
+                  ? "Collection explorer"
+                  : navigationView === "quick-notes"
+                    ? "Quick notes explorer"
+                    : view[0].toUpperCase() + view.slice(1) + " explorer"
+            }
+          >
             <header className="explorer-brand">
               <span className="brand">
                 studyspace<span className="brand-dot">.</span>
@@ -2068,17 +2383,42 @@ export default function WorkspaceApp({
             </header>
             <button
               className="workspace-selector"
-              onClick={() => setDialog({ type: "workspaces" })}
-              aria-label="Manage workspaces"
+              onClick={() =>
+                collaboration
+                  ? collaboration.members()
+                  : setDialog({ type: "workspaces" })
+              }
+              aria-label={
+                collaboration ? "People & permissions" : "Manage workspaces"
+              }
             >
               <span className="workspace-avatar">
                 {w.settings.displayName.slice(0, 1)}
               </span>
               <span>
-                {w.settings.workspaceName ?? "My workspace"}
-                <small>{demo ? "On this device" : "Private workspace"}</small>
+                {collaboration
+                  ? "Shared workspace"
+                  : (w.settings.workspaceName ?? "My workspace")}
+                <small>
+                  {collaboration
+                    ? readOnly
+                      ? "Viewer access"
+                      : "Live collaboration"
+                    : demo
+                      ? "On this device"
+                      : "Private workspace"}
+                </small>
               </span>
             </button>
+            <div className="explorer-scroll" tabIndex={0} role="region" aria-label="File manager">
+            {cloudAccount && demo && !w.notes.length && (
+              <button
+                className="text-button"
+                onClick={() => setDialog({ type: "workspaces" })}
+              >
+                Recover previous cloud notes
+              </button>
+            )}
             <button
               className="quick-actions-label"
               onClick={() => setDialog({ type: "palette" })}
@@ -2109,245 +2449,273 @@ export default function WorkspaceApp({
               <kbd>Ctrl O</kbd>
             </button>
             <hr className="explorer-divider" />
-            {pinnedNotes.length > 0 && (
-              <section className="pinned-notes" aria-label="Pinned notes">
-                <h2>
-                  <Pin size={12} />
-                  Pinned notes
-                </h2>
-                <div>
-                  {pinnedNotes.map((n) => (
-                    <div
-                      className={
-                        "pinned-note-row" +
-                        ((activePane === "right" ? rightNoteId : activeId) ===
-                        n.id
-                          ? " selected"
-                          : "")
-                      }
-                      key={n.id}
-                    >
-                      <button
-                        onClick={() => openNote(n.id)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setContextMenu({
-                            id: n.id,
-                            x: Math.min(e.clientX, innerWidth - 230),
-                            y: Math.min(e.clientY, innerHeight - 400),
-                          });
-                        }}
-                      >
-                        <FileText size={15} />
-                        <span>{n.title || "Untitled"}</span>
-                      </button>
-                      <Menu
-                        trigger={
-                          <button aria-label={"Actions for pinned " + n.title}>
-                            <MoreHorizontal size={15} />
+            {view === "shared" ? (
+              <div id="shared-explorer-slot" className="shared-explorer-body" />
+            ) : navigationView !== "collections" && !studyFolderPicker ? (
+              <TabSidebar
+                ctx={ctx}
+                view={navigationView}
+                onCheckup={(id) => setSidebarRequest({ kind: "checkup", id, sequence: Date.now() })}
+                onReviewGroup={(id) =>
+                  setSidebarRequest({
+                    kind: "review",
+                    id,
+                    sequence: Date.now(),
+                  })
+                }
+              />
+            ) : (
+              <>
+                {pinnedNotes.length > 0 && (
+                  <section className="pinned-notes" aria-label="Pinned notes">
+                    <h2>
+                      <Pin size={12} />
+                      Pinned notes
+                    </h2>
+                    <div>
+                      {pinnedNotes.map((n) => (
+                        <div
+                          className={
+                            "pinned-note-row" +
+                            ((activePane === "right"
+                              ? rightNoteId
+                              : activeId) === n.id
+                              ? " selected"
+                              : "")
+                          }
+                          key={n.id}
+                        >
+                          <button
+                            onClick={() => openNote(n.id)}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              setContextMenu({
+                                id: n.id,
+                                x: Math.min(e.clientX, innerWidth - 230),
+                                y: Math.min(e.clientY, innerHeight - 400),
+                              });
+                            }}
+                          >
+                            <FileText size={15} />
+                            <span>{n.title || "Untitled"}</span>
+                            <Pin size={13} className="note-pin" role="img" aria-label="Pinned note" />
                           </button>
-                        }
-                        items={itemActions(n.id)}
-                      />
+                          <Menu
+                            trigger={
+                              <button
+                                aria-label={"Actions for pinned " + n.title}
+                              >
+                                <MoreHorizontal size={15} />
+                              </button>
+                            }
+                            items={itemActions(n.id)}
+                          />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </section>
-            )}
-            <div className="tree-heading">
-              {focused ? (
-                <button
-                  className="back-collections"
-                  title="Return to the previous view"
-                  onClick={returnFromCollection}
-                >
-                  <ArrowLeft size={16} /> All Collections
-                </button>
-              ) : (
-                <span>COLLECTIONS</span>
-              )}
-              <div className="inline-actions">
-                <Menu
-                  trigger={
-                    <button className="icon-button" aria-label="Sort tree">
-                      <ArrowUpDown size={14} />
+                  </section>
+                )}
+                <div className="tree-heading">
+                  {focused ? (
+                    <button
+                      className="back-collections"
+                      title="Return to the previous view"
+                      onClick={returnFromCollection}
+                    >
+                      <ArrowLeft size={16} /> All Collections
                     </button>
-                  }
-                  items={["manual", "name", "created", "updated"].map(
-                    (value) => ({
-                      label:
-                        (value === sort ? "✓ " : "") +
-                        value[0].toUpperCase() +
-                        value.slice(1),
-                      action: () => setSort(value),
-                    }),
+                  ) : (
+                    <span>
+                      {collaboration ? "SHARED COLLECTIONS" : "COLLECTIONS"}
+                    </span>
                   )}
-                />
-                {!focused && (
-                  <IconButton
-                    label="Create collection or subject"
-                    onClick={() =>
-                      setDialog({
-                        type: "container",
-                        parentId: focus ?? undefined,
-                      })
+                  <div className="inline-actions">
+                    <Menu
+                      trigger={
+                        <button className="icon-button" aria-label="Sort tree">
+                          <ArrowUpDown size={14} />
+                        </button>
+                      }
+                      items={["manual", "name", "created", "updated"].map(
+                        (value) => ({
+                          label:
+                            (value === sort ? "✓ " : "") +
+                            value[0].toUpperCase() +
+                            value.slice(1),
+                          action: () => setSort(value),
+                        }),
+                      )}
+                    />
+                    {!focused && (
+                      <IconButton
+                        label="Create collection or subject"
+                        onClick={() =>
+                          setDialog({
+                            type: "container",
+                            parentId: focus ?? undefined,
+                          })
+                        }
+                      >
+                        <Plus size={16} />
+                      </IconButton>
+                    )}
+                  </div>
+                </div>
+                {focused && (
+                  <div
+                    className="focused-collection"
+                    style={
+                      { "--collection-color": focused.color } as CSSProperties
                     }
                   >
-                    <Plus size={16} />
-                  </IconButton>
-                )}
-              </div>
-            </div>
-            {focused && (
-              <div
-                className="focused-collection"
-                style={{ "--collection-color": focused.color } as CSSProperties}
-              >
-                <SymbolIcon name={focused.icon} size={19} />
-                <strong>{focused.title}</strong>
-                <button
-                  aria-label={"New folder in " + focused.title}
-                  onClick={() => addFolder(focused.id)}
-                >
-                  <FolderPlus size={15} />
-                </button>
-                <button
-                  aria-label={"New file in " + focused.title}
-                  onClick={() => addNote(focused.id)}
-                >
-                  <FileText size={15} />
-                </button>
-                <Menu
-                  trigger={
+                    <SymbolIcon name={focused.icon} size={19} />
+                    <strong>{focused.title}</strong>
                     <button
-                      className="icon-button"
-                      aria-label={"Actions for " + focused.title}
+                      aria-label={"New folder in " + focused.title}
+                      onClick={() => addFolder(focused.id)}
                     >
-                      <MoreHorizontal size={17} />
+                      <FolderPlus size={15} />
                     </button>
-                  }
-                  items={itemActions(focused.id)}
-                />
-              </div>
-            )}
-            {studyFolderPicker && (
-              <div className="study-folder-prompt" role="status">
-                <strong>Choose study material</strong>
-                <p>
-                  Click a folder or collection below. Use the arrows to reveal
-                  nested folders.
-                </p>
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    studyFolderPicker.cancel?.();
-                    setStudyFolderPicker(null);
-                    if (innerWidth <= 1050) setLeft(false);
-                  }}
-                >
-                  Cancel selection
-                </button>
-              </div>
-            )}
-            <div className="tree-scroll">
-              <div
-                className="file-tree"
-                role="tree"
-                aria-label={
-                  focused ? focused.title + " files" : "All collections"
-                }
-              >
-                {renderTree(studyFolderPicker ? null : focus)}
-              </div>
-
-              {!w.notes.length && (
-                <p className="tree-hint">
-                  A little space for everything you’re learning.
-                </p>
-              )}
-              {!focused && (
-                <button
-                  className="new-collection"
-                  onClick={() => setDialog({ type: "container" })}
-                >
-                  <Plus size={14} /> New collection
-                </button>
-              )}
-            </div>
-            <div className="explorer-footer">
-              {focused && (
-                <div className="managed-views">
-                  <button onClick={() => setView("dictionary")}>
-                    <BookA size={15} />
-                    Dictionary
-                    <span>
-                      {
-                        w.definitions.filter(
-                          (d) =>
-                            !d.trashed &&
-                            d.subjectIds.some((id) =>
-                              inContainer(w, id, focused.id),
-                            ),
-                        ).length
+                    <button
+                      aria-label={"New file in " + focused.title}
+                      onClick={() => addNote(focused.id)}
+                    >
+                      <FileText size={15} />
+                    </button>
+                    <Menu
+                      trigger={
+                        <button
+                          className="icon-button"
+                          aria-label={"Actions for " + focused.title}
+                        >
+                          <MoreHorizontal size={17} />
+                        </button>
                       }
-                    </span>
-                  </button>
-                  <button onClick={() => setView("sources")}>
-                    <Link2 size={15} />
-                    Sources
-                    <span>
-                      {
-                        w.sources.filter((s) =>
-                          s.subjectIds.some((id) =>
-                            inContainer(w, id, focused.id),
-                          ),
-                        ).length
-                      }
-                    </span>
-                  </button>
-                  {boardCount > 0 && (
-                    <button onClick={() => setBlockBrowser("whiteboard")}>
-                      <PenLine size={15} />
-                      Whiteboards<span>{boardCount}</span>
+                      items={itemActions(focused.id)}
+                    />
+                  </div>
+                )}
+                {studyFolderPicker && (
+                  <div className="study-folder-prompt" role="status">
+                    <strong>Choose study material</strong>
+                    <p>
+                      Click a folder or collection below. Use the arrows to
+                      reveal nested folders.
+                    </p>
+                    <button
+                      className="text-button"
+                      onClick={() => {
+                        studyFolderPicker.cancel?.();
+                        setStudyFolderPicker(null);
+                        if (innerWidth <= 1050) setLeft(false);
+                      }}
+                    >
+                      Cancel selection
                     </button>
-                  )}
-                  {codeCount > 0 && (
-                    <button onClick={() => setBlockBrowser("code")}>
-                      <Code2 size={15} />
-                      Code blocks<span>{codeCount}</span>
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setView("search");
-                      setTreeQuery("");
-                    }}
+                  </div>
+                )}
+                <div className="tree-scroll">
+                  <div
+                    className="file-tree"
+                    role="tree"
+                    aria-label={
+                      focused ? focused.title + " files" : "All collections"
+                    }
                   >
-                    <Search size={15} />
-                    Search this collection
+                    {renderTree(studyFolderPicker ? null : focus)}
+                  </div>
+
+                  {!w.notes.length && (
+                    <p className="tree-hint">
+                      A little space for everything you’re learning.
+                    </p>
+                  )}
+                  {!focused && (
+                    <button
+                      className="new-collection"
+                      onClick={() => setDialog({ type: "container" })}
+                    >
+                      <Plus size={14} /> New collection
+                    </button>
+                  )}
+                </div>
+                <div className="explorer-footer">
+                  {focused && (
+                    <div className="managed-views">
+                      <button onClick={() => setView("dictionary")}>
+                        <BookA size={15} />
+                        Dictionary
+                        <span>
+                          {
+                            w.definitions.filter(
+                              (d) =>
+                                !d.trashed &&
+                                d.subjectIds.some((id) =>
+                                  inContainer(w, id, focused.id),
+                                ),
+                            ).length
+                          }
+                        </span>
+                      </button>
+                      <button onClick={() => setView("sources")}>
+                        <Link2 size={15} />
+                        Sources
+                        <span>
+                          {
+                            w.sources.filter((s) =>
+                              s.subjectIds.some((id) =>
+                                inContainer(w, id, focused.id),
+                              ),
+                            ).length
+                          }
+                        </span>
+                      </button>
+                      {boardCount > 0 && (
+                        <button onClick={() => setBlockBrowser("whiteboard")}>
+                          <PenLine size={15} />
+                          Whiteboards<span>{boardCount}</span>
+                        </button>
+                      )}
+                      {codeCount > 0 && (
+                        <button onClick={() => setBlockBrowser("code")}>
+                          <Code2 size={15} />
+                          Code blocks<span>{codeCount}</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setView("search");
+                          setTreeQuery("");
+                        }}
+                      >
+                        <Search size={15} />
+                        Search this collection
+                      </button>
+                    </div>
+                  )}
+                  <button onClick={() => setDialog({ type: "palette" })}>
+                    <Command size={15} /> Command palette <kbd>Ctrl P</kbd>
+                  </button>
+                  <button onClick={() => setView("review")}>
+                    <span className="review-mini-icon">
+                      <Layers size={15} />
+                    </span>
+                    <span>
+                      A little learning, every day
+                      <small>
+                        {
+                          w.review.filter(
+                            (r) => !r.suspended && r.schedule.due <= now(),
+                          ).length
+                        }{" "}
+                        items ready to review
+                      </small>
+                    </span>
+                    <ChevronRight size={14} />
                   </button>
                 </div>
-              )}
-              <button onClick={() => setDialog({ type: "palette" })}>
-                <Command size={15} /> Command palette <kbd>Ctrl P</kbd>
-              </button>
-              <button onClick={() => setView("review")}>
-                <span className="review-mini-icon">
-                  <Layers size={15} />
-                </span>
-                <span>
-                  A little learning, every day
-                  <small>
-                    {
-                      w.review.filter(
-                        (r) => !r.suspended && r.schedule.due <= now(),
-                      ).length
-                    }{" "}
-                    items ready to review
-                  </small>
-                </span>
-                <ChevronRight size={14} />
-              </button>
+              </>
+            )}
             </div>
           </aside>
           <div
@@ -2556,7 +2924,7 @@ export default function WorkspaceApp({
                 </div>
                 <div className="inline-actions">
                   <span className="private-label">
-                    <Lock size={11} /> Private
+                    <Lock size={11} /> {collaboration ? "Shared" : "Private"}
                   </span>
                   <IconButton
                     label="Note history"
@@ -2688,7 +3056,9 @@ export default function WorkspaceApp({
                           key={m.value}
                           label={m.label}
                           active={mode === m.value}
-                          onClick={() => setMode(m.value as typeof mode)}
+                          onClick={() => {
+                            if (!readOnly) setMode(m.value as typeof mode);
+                          }}
                         >
                           <m.icon size={15} />
                         </IconButton>
@@ -2700,7 +3070,7 @@ export default function WorkspaceApp({
                     className="note-title"
                     aria-label="Note title"
                     value={noteDisplayTitle(active)}
-                    readOnly={mode === "reading"}
+                    readOnly={readOnly || mode === "reading"}
                     onFocus={(e) => {
                       if (e.target.value === "Untitled") e.target.select();
                     }}
@@ -2774,15 +3144,23 @@ export default function WorkspaceApp({
                       + Add tag
                     </button>
                   </div>
-                  <div className="writing-area">
+                  <div className="writing-area" data-workbook-scope={account} data-workbook-collection={collaboration?.id} data-note-id={active.id}>
                     {mode === "reading" && (
                       <Markdown
+                        key={active.id}
+                        collapsibleHeadings
                         attachments={w.attachments}
                         notes={w.notes.filter((n) => !n.trashed)}
                         demo={demo}
                         fromPath={active.originalPath ?? active.title + ".md"}
                         density={w.settings.dictionaryDensity}
                         onAttachment={(id) => setDialog({ type: "pdf", id })}
+                        onBodyChange={collaboration?.readOnly ? undefined : (body, previous) => mutate((s) => {
+                          const n = s.notes.find((n) => n.id === active.id);
+                          // Reading can omit the note's leading title. Retain that prefix and reject stale edits.
+                          if (n?.body === active.body && n.body.endsWith(previous))
+                            saveNote(s, n.id, n.revision, { body: n.body.slice(0, n.body.length - previous.length) + body });
+                        })}
                         body={
                           active.body.startsWith("# " + active.title + "\n")
                             ? active.body
@@ -2835,6 +3213,9 @@ export default function WorkspaceApp({
                     )}
                     <div hidden={mode === "reading"}>
                       <Editor
+                        key={collaboration ? active.id : undefined}
+                        sharedText={collaboration?.text(active.id)}
+                        readOnly={readOnly}
                         id={active.id}
                         body={active.body}
                         attachments={w.attachments}
@@ -2861,7 +3242,7 @@ export default function WorkspaceApp({
                         onDefinition={(id) =>
                           setDialog({ type: "definition-detail", id })
                         }
-                        onAttach={(files) => void attach(files)}
+                        onAttach={(files, placement) => void attach(files, active.id, placement)}
                         onChat={(text) => ctx.openChat(text, active.id)}
                         onBlockAction={(action, block) =>
                           ctx.blockAction?.(action, block, active.id)
@@ -3042,8 +3423,10 @@ export default function WorkspaceApp({
             </div>
           ) : (
             <WorkspaceViews
+              key={cloudAccount?.id ?? "signed-out"}
               ctx={ctx}
               view={view}
+              sidebarRequest={sidebarRequest}
               query={treeQuery}
               setQuery={setTreeQuery}
             />
@@ -3066,14 +3449,14 @@ export default function WorkspaceApp({
               {saveStatus}
             </span>
             <div>
-              <span>
+              {view === "weekly-checkups" ? <span>Weekly checkups · Personal workspace</span> : <><span>
                 {active?.body.trim()
                   ? active.body.trim().split(/\s+/u).length
                   : 0}{" "}
                 words
               </span>
               <span>{active?.body.length ?? 0} characters</span>
-              <span>Markdown</span>
+              <span>Markdown</span></>}
               <button
                 title="Keyboard shortcuts"
                 onClick={() => setView("settings")}
@@ -3110,7 +3493,7 @@ export default function WorkspaceApp({
           />
         )}
       </div>
-      {!zen && right && (
+      {!zen && right && view !== "weekly-checkups" && (
         <>
           <div
             className="resize-handle right-resize"
@@ -3250,7 +3633,7 @@ export default function WorkspaceApp({
                   }
                 >
                   <BookA size={14} />
-                  Add to dictionary
+                  Create definition
                 </button>
                 <button
                   onClick={() =>
@@ -3269,11 +3652,16 @@ export default function WorkspaceApp({
                 <button
                   onClick={() => {
                     setSelection(selectedText);
-                    setDialog({ type: "hyperlink" });
+                    setDialog({
+                      type: "hyperlink",
+                      value: selectedText,
+                      sourceId: active.id,
+                      reading: mode === "reading",
+                    });
                   }}
                 >
                   <Link2 size={14} />
-                  Insert / edit link
+                  Insert or edit link / definition
                 </button>
                 <button onClick={() => ctx.openChat(selectedText, active.id)}>
                   <Sparkles size={14} /> Add to Chat
@@ -3287,9 +3675,12 @@ export default function WorkspaceApp({
       )}
       {view === "collections" && active && !dialog && (
         <TextContextMenu
+          shared={!!collaboration}
           key={"text-context:" + active.id + ":" + mode}
-          editor={editor}
-          reading={mode === "reading"}
+          editor={ctx.editor}
+          reading={
+            activePane === "right" ? !rightEditor.current : mode === "reading"
+          }
           onDictionary={(text) =>
             setDialog({ type: "definition", value: text, sourceId: active.id })
           }
@@ -3304,7 +3695,15 @@ export default function WorkspaceApp({
           }
           onLink={(text) => {
             setSelection(text);
-            setDialog({ type: "hyperlink" });
+            setDialog({
+              type: "hyperlink",
+              value: text,
+              sourceId: ctx.active?.id,
+              reading:
+                activePane === "right"
+                  ? !rightEditor.current
+                  : mode === "reading",
+            });
           }}
           onError={toast}
         />
@@ -3388,6 +3787,14 @@ export default function WorkspaceApp({
           onClose={() => setBlockDestination(null)}
         />
       )}
+      {settingsOpen && (
+        <Modal title="Settings" className="settings-popup" onClose={() => {
+          setSettingsOpen(false);
+          requestAnimationFrame(() => settingsTrigger.current?.focus());
+        }}>
+          <WorkspaceViews ctx={ctx} view="settings" settingsPopup query={treeQuery} setQuery={setTreeQuery} />
+        </Modal>
+      )}
       {dialog && dialog.type !== "workspaces" && (
         <Dialogs
           key={dialog.type + ":" + (dialog.id ?? dialog.parentId ?? "")}
@@ -3458,6 +3865,7 @@ export default function WorkspaceApp({
           </IconButton>
         </div>
       )}
+      <PDFImportPrompt scope={account} />
       <button
         className="mobile-create"
         aria-label="Quick note"

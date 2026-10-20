@@ -15,6 +15,8 @@ test("inspects desktop themes, tablet layout, subject/dictionary dialogs, and jo
       .click();
     await page.getByRole("button", { name: "Appearance", exact: true }).click();
     await page.getByRole("button", { name: theme, exact: true }).click();
+    await page.getByRole("dialog", { name: "Settings", exact: true })
+      .getByRole("button", { name: "Close dialog", exact: true }).click();
     await page
       .getByRole("button", { name: "Collections", exact: true })
       .click();

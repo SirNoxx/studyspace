@@ -1,0 +1,718 @@
+:where(.checkups-view, .checkup-builder, .checkup-goal-form)
+  button:not(:where(.icon-button, .primary)) {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.checkup-steps button[aria-current] > span {
+  color: var(--accent);
+}
+.checkups-view {
+  max-width: 1440px;
+  width: 100%;
+  margin: 0 auto;
+}
+.checkups-view h2 {
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  color: var(--heading);
+  margin: 0 0 10px;
+}
+.checkups-view h3 {
+  color: var(--heading);
+  margin: 8px 0;
+}
+.checkups-view p,
+.checkup-builder p {
+  line-height: 1.65;
+}
+.checkups-view button:not(.icon-button),
+.checkup-builder button:not(.icon-button) {
+  white-space: normal;
+}
+.checkup-overview {
+  display: grid;
+  grid-template-columns: 0.8fr 0.8fr 1.2fr 1.6fr;
+  gap: 22px;
+  border-block: 1px solid var(--border);
+  padding: 23px 0;
+  margin: 8px 0 26px;
+}
+.checkup-overview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.checkup-overview strong {
+  font-size: 29px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  color: var(--accent);
+}
+.checkup-overview span,
+.checkup-overview small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.checkup-activity > div {
+  display: flex;
+  gap: 4px;
+  margin: 3px 0;
+  flex-wrap: wrap;
+}
+.checkup-activity button {
+  min-width: 16px;
+  width: 20px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.checkup-activity button.complete {
+  background: var(--accent);
+  color: var(--editor);
+  border-color: var(--accent);
+}
+.checkup-activity button.draft {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.checkup-tabs {
+  display: flex;
+  gap: 5px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 30px;
+  overflow-x: auto;
+  padding-bottom: 9px;
+}
+.checkup-tabs button {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  padding: 10px 13px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+.checkup-tabs button[aria-current] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.checkup-week-heading,
+.checkup-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.checkup-week-heading .eyebrow {
+  display: block;
+  margin-bottom: 7px;
+}
+.checkup-section-heading p {
+  margin: 0;
+  color: var(--muted);
+}
+.checkup-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.checkups-view input,
+.checkups-view textarea,
+.checkups-view select,
+.checkup-builder input,
+.checkup-builder textarea,
+.checkup-builder select,
+.checkup-field input,
+.checkup-field textarea,
+.checkup-field select {
+  border: 1px solid var(--border);
+  background: var(--editor);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: var(--text);
+  min-width: 0;
+  max-width: 100%;
+}
+.checkups-view :is(input, textarea, select):focus-visible,
+.checkup-builder :is(input, textarea, select):focus-visible,
+.checkup-field :is(input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.checkups-view textarea,
+.checkup-builder textarea,
+.checkup-field textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.checkups-view :is(input, textarea, select):disabled {
+  opacity: 1;
+  color: var(--text);
+  background: var(--panel);
+  cursor: default;
+}
+.checkup-start {
+  text-align: center;
+  padding: 30px 0;
+}
+.checkup-start > p {
+  max-width: 620px;
+  margin: 0 auto 25px;
+  color: var(--muted);
+}
+.checkup-emblem {
+  display: inline-flex;
+  padding: 18px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.checkup-template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 15px;
+  margin: 20px 0 28px;
+  text-align: left;
+}
+.checkup-template-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 13px;
+  text-align: left;
+  padding: 23px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.checkup-template-choice > strong {
+  font-size: 16px;
+  color: var(--heading);
+}
+.checkup-template-choice > span {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.checkup-template-choice > small {
+  margin-top: auto;
+  color: var(--accent);
+}
+.checkup-template-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+.checkup-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+.checkup-entry-meta label {
+  margin-left: auto;
+}
+.checkup-entry-meta select {
+  padding: 5px;
+}
+.checkup-flow {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+.checkup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  position: sticky;
+  top: 0;
+}
+.checkup-steps button {
+  background: transparent;
+  border: 1px solid transparent;
+  justify-content: flex-start;
+  text-align: left;
+  font-size: 13px;
+  padding: 12px 9px;
+  color: var(--muted);
+  gap: 10px;
+}
+.checkup-steps button > span {
+  font-size: 11px;
+  color: var(--subtle);
+  font-variant-numeric: tabular-nums;
+}
+.checkup-steps button[aria-current] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  border-color: var(--border);
+  border-radius: 6px;
+}
+.checkup-form-card {
+  padding: 27px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-raised);
+  min-width: 0;
+}
+.checkup-form-card > h2 {
+  font-family: var(--serif);
+  font-size: 27px;
+}
+.checkup-form-card > h2:focus {
+  outline: none;
+}
+.checkup-muted {
+  color: var(--muted);
+}
+.checkup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 21px 0;
+  min-width: 0;
+  font-size: 13px;
+}
+fieldset.checkup-field {
+  padding: 0;
+  border: 0;
+}
+.checkup-field legend {
+  padding: 0;
+  margin-bottom: 9px;
+}
+.checkup-label {
+  font-weight: 600;
+  color: var(--heading);
+}
+.checkup-field small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.checkup-required {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-left: 5px;
+}
+.checkup-rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.checkup-rating button {
+  width: 42px;
+  height: 40px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--editor);
+}
+.checkup-rating button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.checkup-rating > span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+.checkup-options {
+  display: grid;
+  gap: 12px;
+}
+.checkup-options label,
+.checkup-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.checkup-options input,
+.checkup-checkbox input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+.checkup-day-grid {
+  display: grid;
+  gap: 12px;
+}
+.checkup-day {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 15px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  background: var(--panel);
+}
+.checkup-day h4 {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--heading);
+}
+.checkup-day h4 small {
+  font-weight: 400;
+  margin-left: 8px;
+}
+.checkup-day label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.checkup-day textarea {
+  width: 100%;
+  font-size: 12px;
+}
+.checkup-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 17px;
+  background: var(--accent-soft);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 20px 0;
+}
+.checkup-callout svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.checkup-empty {
+  padding: 45px 20px;
+  text-align: center;
+  color: var(--muted);
+}
+.checkup-empty > p {
+  max-width: 530px;
+  margin: 10px auto;
+}
+.checkup-empty > svg {
+  color: var(--accent);
+}
+.checkup-step-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  margin-top: 30px;
+  padding-top: 20px;
+}
+.checkup-step-footer > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.checkup-commitment {
+  border-bottom: 1px solid var(--border);
+  padding: 18px 0;
+}
+.checkup-commitment-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  align-items: flex-start;
+}
+.checkup-commitment-heading small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  color: var(--muted);
+}
+.checkup-commitment-heading select {
+  font-size: 12px;
+  max-width: 180px;
+}
+.checkup-commitment-form {
+  padding: 0 18px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 15px;
+  background: var(--panel);
+}
+.checkup-planned-commitment {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.checkup-planned-commitment > div {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.checkup-planned-commitment small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.checkup-review-now summary {
+  cursor: pointer;
+  color: var(--accent);
+  padding: 12px 0;
+}
+.checkup-history-filters {
+  margin-bottom: 18px;
+}
+.checkup-history-filters > input {
+  flex: 1;
+  min-width: 180px;
+}
+.checkup-history-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 17px 0;
+}
+.checkup-history-open {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  justify-content: flex-start;
+  gap: 17px;
+}
+.checkup-history-open > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.checkup-history-date {
+  display: inline-flex;
+  padding: 15px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+.checkup-history-open h3 {
+  margin: 0 0 5px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.checkup-history-open p {
+  margin: 0 0 5px;
+  color: var(--muted);
+}
+.checkup-history-open small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.checkup-two-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.checkup-comparison {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.checkup-comparison-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+.checkup-comparison-row:last-child {
+  border-bottom: 0;
+}
+.checkup-comparison-row > * {
+  padding: 17px;
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-right: 1px solid var(--border);
+}
+.checkup-comparison-row > *:last-child {
+  border-right: 0;
+}
+.checkup-comparison-row small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.checkup-comparison-header {
+  background: var(--panel);
+  color: var(--heading);
+}
+.checkup-comparison-row.changed > :first-child {
+  background: var(--accent-soft);
+}
+.checkup-comparison-row .checkup-delta {
+  color: var(--accent);
+  font-weight: 600;
+}
+.checkup-card {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 23px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.checkup-card > p {
+  color: var(--muted);
+}
+.checkup-card > small {
+  color: var(--muted);
+  display: block;
+}
+.checkup-card > .checkup-actions {
+  margin-top: 18px;
+}
+.checkup-goal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.checkup-goal-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 22px 0;
+}
+.checkup-goal-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 6px;
+}
+.checkup-goal-progress small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.checkup-archived {
+  border-style: dashed;
+}
+.checkup-builder {
+  padding: 0 2px;
+}
+.checkup-builder .checkup-card {
+  margin: 20px 0;
+}
+.checkup-builder-prompt {
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+}
+.checkup-builder-prompt > .checkup-actions > span,
+.checkup-builder-section > .checkup-actions > strong {
+  flex: 1;
+}
+.checkup-builder-prompt .checkup-field {
+  margin: 10px 0;
+}
+.checkup-builder-footer {
+  position: sticky;
+  bottom: -24px;
+  padding: 20px 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  background: var(--panel-raised);
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+}
+.checkup-error {
+  padding: 14px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+}
+@media (max-width: 1150px) {
+  .checkup-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .checkup-steps {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 5px;
+  }
+  .checkup-steps button {
+    flex-shrink: 0;
+    max-width: 180px;
+  }
+  .checkup-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .checkup-week-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+@media (max-width: 600px) {
+  .checkup-form-card {
+    padding: 18px;
+  }
+  .checkup-form-card > h2 {
+    font-size: 23px;
+  }
+  .checkup-section-heading,
+  .checkup-history-item,
+  .checkup-commitment-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .checkup-two-columns {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .checkup-day {
+    grid-template-columns: 1fr;
+  }
+  .checkup-day h4 {
+    grid-column: auto;
+  }
+  .checkup-entry-meta label {
+    margin-left: 0;
+  }
+  .checkup-comparison-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .checkup-comparison-row > :first-child {
+    grid-column: 1 / -1;
+    border-right: 0;
+    padding-block: 10px;
+  }
+  .checkup-comparison-row > * {
+    padding: 12px;
+  }
+  .checkup-steps button {
+    font-size: 12px;
+  }
+  .checkup-overview {
+    gap: 20px 10px;
+  }
+  .checkup-step-footer {
+    flex-wrap: wrap;
+  }
+}

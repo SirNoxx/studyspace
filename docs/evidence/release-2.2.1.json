@@ -1,0 +1,45 @@
+{
+  "version": "2.2.1",
+  "verifiedAt": "2026-09-29T18:06:57.707Z",
+  "platform": "Windows x64",
+  "unitTests": {
+    "files": 41,
+    "tests": 220
+  },
+  "desktopTests": 17,
+  "browserTests": 5,
+  "productionBuild": "passed including TypeScript",
+  "packagedChecks": [
+    "existing bare and escaped checklist lines",
+    "rich clipboard checklist conversion without bracket escape characters",
+    "checked state in Reading and after reload",
+    "90% writing pane width",
+    "startup, renderer isolation and settings validation",
+    "immediate-close saving and restart persistence",
+    "updater download, correct checksum and corrupt checksum rejection"
+  ],
+  "bundledEnvironmentFiles": [],
+  "installerExecuted": false,
+  "artifacts": [
+    {
+      "name": "Studyspace-Setup-2.2.1-x64.exe",
+      "bytes": 160358194,
+      "sha256": "1a2f07263085fc8c3cd172a2bb2508b2c9d286996faa9600f91fe41bff61fb36"
+    },
+    {
+      "name": "Studyspace-Setup-2.2.1-x64.exe.blockmap",
+      "bytes": 167176,
+      "sha256": "571e637467968c50423f7527bff1ea17fe89b999878fc29d68f46e0b3b43cb37"
+    },
+    {
+      "name": "latest.yml",
+      "bytes": 357,
+      "sha256": "4a3db6f7ad2df569f8d2355927bdf7facd79598a661c73b86f7e1f69d9c8b661"
+    }
+  ],
+  "limits": [
+    "Unsigned Windows installer",
+    "In-place installation upgrade not executed",
+    "Hosted services not deployed"
+  ]
+}

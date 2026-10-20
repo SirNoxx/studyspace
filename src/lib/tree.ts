@@ -11,6 +11,7 @@ export function treeItems(
     (c) =>
       c.system !== "quick" &&
       c.system !== "pinned" &&
+      !w.settings.learningPaths?.some((p) => p.rootId === c.id) &&
       c.parentId === parent &&
       !c.trashed &&
       !c.archived,
@@ -25,7 +26,12 @@ export function treeItems(
   const fallback = Math.max(-1, ...containers.map((c) => c.order)) + 1;
   return [...containers, ...notes]
     .map((item, index) => ({ item, rank: item.order ?? fallback + index }))
-    .sort((a, b) => a.rank - b.rank)
+    .sort(
+      (a, b) =>
+        Number("containerId" in b.item && b.item.metadata?.pinned === true) -
+          Number("containerId" in a.item && a.item.metadata?.pinned === true) ||
+        a.rank - b.rank,
+    )
     .map((entry) => entry.item);
 }
 export function treeDestination(

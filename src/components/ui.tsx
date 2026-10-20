@@ -15,6 +15,8 @@ import {
   Library,
   type LucideIcon,
 } from "lucide-react";
+import { DynamicIcon } from "lucide-react/dynamic.mjs";
+import { collectionIconName } from "@/lib/collection-icons";
 import type { ReactNode } from "react";
 export const icons: Record<string, LucideIcon> = {
   book: BookOpen,
@@ -37,8 +39,20 @@ export function SymbolIcon({
   size?: number;
   style?: React.CSSProperties;
 }) {
-  const Icon = icons[name] ?? BookOpen;
-  return <Icon size={size} {...props} />;
+  const LegacyIcon = Object.hasOwn(icons, name) ? icons[name] : undefined;
+  if (LegacyIcon) return <LegacyIcon size={size} {...props} />;
+  const iconName = collectionIconName(name);
+  return iconName ? (
+    <DynamicIcon
+      key={iconName}
+      name={iconName}
+      size={size}
+      {...props}
+      fallback={() => <BookOpen size={size} {...props} />}
+    />
+  ) : (
+    <BookOpen size={size} {...props} />
+  );
 }
 export function IconButton({
   label,
@@ -69,19 +83,30 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  className = "",
+  descriptionHidden = false,
+  initialFocusSelector,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  className?: string;
+  descriptionHidden?: boolean;
+  initialFocusSelector?: string;
 }) {
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content
-          className={"dialog " + (wide ? "dialog-wide" : "")}
+          className={"dialog " + (wide ? "dialog-wide " : "") + className}
+          onOpenAutoFocus={(event) => {
+            if (!initialFocusSelector) return;
+            const field = (event.target as HTMLElement).querySelector<HTMLElement>(initialFocusSelector);
+            if (field) { event.preventDefault(); field.focus(); }
+          }}
           onEscapeKeyDown={(event) => {
             // A nested dialog can be visible before Radix updates its layer
             // listeners. Always dismiss the dialog currently drawn on top.
@@ -110,7 +135,7 @@ export function Modal({
             </Dialog.Close>
           </div>
           <Dialog.Description
-            className={description ? "dialog-description" : "sr-only"}
+            className={description && !descriptionHidden ? "dialog-description" : "sr-only"}
           >
             {description ?? title}
           </Dialog.Description>

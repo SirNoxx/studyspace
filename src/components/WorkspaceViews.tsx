@@ -2,6 +2,7 @@
 import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
 import { instantiateSnapshot } from "@/lib/study-copy";
 import { localDB } from "@/lib/store";
+import { sha256 } from "@/lib/transfer";
 import { useEffect, useState } from "react";
 import {
   Search,
@@ -79,8 +80,14 @@ import Profile from "./social/Profile";
 import CommunityFeed from "./social/Feed";
 import Messages from "./social/Messages";
 import Shared from "./social/Shared";
+import Learning from "./Learning";
+import { connectAccount } from "@/lib/device";
 import Moderation from "./social/Moderation";
 import JournalEditor from "./JournalEditor";
+import WeeklyCheckups from "./WeeklyCheckups";
+import type { SidebarRequest } from "./TabSidebar";
+import SpellingDictionarySettings from "./SpellingDictionarySettings";
+import NoteHeadingSettings from "./NoteHeadingSettings";
 import {
   categories,
   publicationCounts,
@@ -91,13 +98,18 @@ export default function WorkspaceViews({
   view,
   query,
   setQuery,
+  sidebarRequest,
+  settingsPopup = false,
 }: {
   ctx: AppContext;
   view: string;
+  sidebarRequest?: SidebarRequest;
+  settingsPopup?: boolean;
   query: string;
   setQuery: (q: string) => void;
 }) {
   const { w, mutate, setDialog, openNote } = ctx;
+  const localSocial = ctx.demo && !ctx.cloudAccount;
   const [sort, setSort] = useState("alpha"),
     [date, setDate] = useState(localDate(w.settings.timezone)),
     [dream, setDream] = useState(false),
@@ -120,6 +132,24 @@ export default function WorkspaceViews({
     [serverNotifications, setServerNotifications] = useState<any[]>([]),
     [searchHits, setSearchHits] = useState<typeof w.notes | null>(null),
     [searchStatus, setSearchStatus] = useState("");
+  useEffect(() => {
+    if (
+      sidebarRequest?.kind === "journal" &&
+      (view === "journal" || view === "dreams")
+    ) {
+      const entry = w.notes.find(
+        (n) => n.id === sidebarRequest.id && !n.trashed,
+      );
+      if (entry) {
+        setJournalEntryId(entry.id);
+        setDate(entry.journalDate ?? entry.createdAt.slice(0, 10));
+        setDream(entry.kind === "dream");
+      }
+    } else if (sidebarRequest?.kind === "review" && view === "review") {
+      setCardGroup(sidebarRequest.id);
+      setRevealed(false);
+    }
+  }, [sidebarRequest, view]);
   useEffect(() => {
     if (ctx.demo || view !== "search") return;
     const abort = new AbortController();
@@ -149,7 +179,7 @@ export default function WorkspaceViews({
     };
   }, [view, query, ctx.focus, ctx.demo]);
   useEffect(() => {
-    if (view !== "discover" || ctx.demo) return;
+    if (view !== "discover" || localSocial) return;
     setLoading(true);
     fetch(
       "/api/publications?q=" +
@@ -166,9 +196,9 @@ export default function WorkspaceViews({
       })
       .catch((e) => setRemoteError(e.message))
       .finally(() => setLoading(false));
-  }, [view, query, ctx.demo, discoverCategory, discoverSort]);
+  }, [view, query, localSocial, discoverCategory, discoverSort]);
   useEffect(() => {
-    if (view !== "inbox" || ctx.demo) return;
+    if (view !== "inbox" || localSocial) return;
     fetch("/api/community")
       .then((r) => r.json())
       .then((d) => {
@@ -176,7 +206,8 @@ export default function WorkspaceViews({
         setServerNotifications(d.notifications ?? []);
       })
       .catch(() => setRemoteError("Inbox is unavailable. Try again."));
-  }, [view, ctx.demo]);
+  }, [view, localSocial]);
+  if (view === "weekly-checkups") return <WeeklyCheckups ctx={ctx} sidebarRequest={sidebarRequest} />;
   const scopeNotes = w.notes.filter(
     (n) =>
       !n.trashed && (!ctx.focus || inContainer(w, n.containerId, ctx.focus)),
@@ -273,10 +304,11 @@ export default function WorkspaceViews({
       ))}
     </div>
   );
+  if (view === "learning") return <Learning ctx={ctx} />;
   if (["profile", "messages", "shared"].includes(view)) {
     return (
       <div className="view-scroll">
-        {ctx.demo ? (
+        {ctx.demo && !ctx.cloudAccount ? (
           <section className="social-page">
             <h1>
               {view === "profile"
@@ -290,15 +322,39 @@ export default function WorkspaceViews({
               students, and send private messages. Your demo notes remain on
               this device.
             </p>
-            <a className="primary" href="/auth">
+            <button
+              className="primary"
+              onClick={() =>
+                void connectAccount().catch((e) => ctx.toast(e.message))
+              }
+            >
               Sign in to Studyspace
-            </a>
+            </button>
           </section>
         ) : (
           <>
             {view === "profile" ? (
               <>
-                <Profile />
+                <Profile
+                  deviceStats={
+                    ctx.demo
+                      ? {
+                          collections: w.containers.filter(
+                            (c) =>
+                              (c.kind === "subject" ||
+                                c.kind === "collection") &&
+                              !c.trashed &&
+                              !c.system,
+                          ).length,
+                          folders: w.containers.filter(
+                            (c) =>
+                              c.kind === "folder" && !c.trashed && !c.system,
+                          ).length,
+                          notes: w.notes.filter((n) => !n.trashed).length,
+                        }
+                      : undefined
+                  }
+                />
                 <Moderation />
               </>
             ) : view === "messages" ? (
@@ -1232,7 +1288,7 @@ export default function WorkspaceViews({
     );
   if (view === "discover") {
     const publications = (
-      ctx.demo
+      localSocial
         ? w.publications
             .filter((p) => p.status === "published")
             .map((p) => p.current)
@@ -1250,7 +1306,7 @@ export default function WorkspaceViews({
       )
       .sort((a, b) =>
         discoverSort === "popular"
-          ? ctx.demo
+          ? localSocial
             ? w.copies.filter((c) => c.publicationId === b.publicationId)
                 .length -
               w.copies.filter((c) => c.publicationId === a.publicationId).length
@@ -1325,7 +1381,7 @@ export default function WorkspaceViews({
               Popularity counts currently saved independent study copies of a
               publication.
             </p>
-            {ctx.demo && (
+            {localSocial && (
               <p className="demo-disclosure">
                 <Globe size={15} /> Local demo publications only. Nothing here
                 is published to the internet.
@@ -1338,7 +1394,7 @@ export default function WorkspaceViews({
                 <article className="discovery-card" key={p.id}>
                   <p className="muted">
                     {p.category ?? "General research"} ·{" "}
-                    {ctx.demo
+                    {localSocial
                       ? w.copies.filter(
                           (c) => c.publicationId === p.publicationId,
                         ).length
@@ -1354,12 +1410,11 @@ export default function WorkspaceViews({
                   <h2>
                     <button
                       onClick={() =>
-                        ctx.demo
-                          ? setDialog({
-                              type: "reader",
-                              publicationId: p.publicationId,
-                            })
-                          : location.assign("/p/" + p.publicationId)
+                        setDialog({
+                          type: "reader",
+                          publicationId: p.publicationId,
+                          snapshot: localSocial ? undefined : p,
+                        })
                       }
                     >
                       {p.title}
@@ -1413,11 +1468,35 @@ export default function WorkspaceViews({
                             }));
                             const db = await localDB();
                             for (const a of p.attachments ?? []) {
-                              const blob = await db.get("assets", a.id),
-                                target = assets.find((x) => x.hash === a.hash);
+                              const blob = localSocial
+                                  ? await db.get("assets", a.id)
+                                  : await fetch(
+                                      `/api/public-assets/${p.publicationId}/${p.id}/${a.id}`,
+                                    ).then((r) => {
+                                      if (!r.ok)
+                                        throw Error(
+                                          "A published attachment is unavailable.",
+                                        );
+                                      return r.blob();
+                                    }),
+                                target =
+                                  assets[
+                                    (p.attachments ?? []).findIndex(
+                                      (original) => original.id === a.id,
+                                    )
+                                  ];
                               if (!blob || !target)
                                 throw new Error(
                                   "A published attachment is unavailable on this device.",
+                                );
+                              if (
+                                blob.size !== a.size ||
+                                (await sha256(
+                                  new Uint8Array(await blob.arrayBuffer()),
+                                )) !== a.hash
+                              )
+                                throw new Error(
+                                  "A published attachment failed its integrity check. Try downloading this publication again.",
                                 );
                               await db.put("assets", blob, target.id);
                             }
@@ -1446,12 +1525,12 @@ export default function WorkspaceViews({
               <Empty
                 icon={Globe}
                 title={
-                  ctx.demo
+                  localSocial
                     ? "Your research can be someone’s starting point."
                     : "No published research found."
                 }
               >
-                {ctx.demo
+                {localSocial
                   ? "Publish a selected note to explore the local reader and study-copy workflow."
                   : "Try another topic or publish a selected collection."}
               </Empty>
@@ -1470,7 +1549,7 @@ export default function WorkspaceViews({
             "Background jobs",
             "Close this page safely. Your configured worker keeps processing queued work.",
           )}
-          <JobStatus demo={ctx.demo} />
+          <JobStatus demo={ctx.demo && !ctx.cloudAccount} />
         </div>
       </div>
     );
@@ -1625,7 +1704,7 @@ export default function WorkspaceViews({
     return (
       <div className="view-scroll">
         <div className="workspace-view settings-view">
-          {header(
+          {!settingsPopup && header(
             "MAKE YOURSELF AT HOME",
             "Settings",
             "A workspace that feels like your own.",
@@ -1674,6 +1753,7 @@ export default function WorkspaceViews({
                     </div>
                   </Field>
                   <ThemeExtras ctx={ctx} />
+                  <NoteHeadingSettings value={w.settings.headingFont} onChange={value => update("headingFont", value)} />
                   <SettingToggle
                     label="Compact main navigation"
                     description="Hide tab names beneath the icons."
@@ -1694,11 +1774,12 @@ export default function WorkspaceViews({
                   />
                   <button
                     className="secondary"
-                    onClick={() =>
+                    onClick={() => {
                       mutate((w) => {
                         w.settings.onboardingComplete = false;
-                      })
-                    }
+                      });
+                      if (settingsPopup) ctx.setView("collections");
+                    }}
                   >
                     Revisit welcome walkthrough
                   </button>
@@ -1712,6 +1793,7 @@ export default function WorkspaceViews({
               )}
               {settingsTab === "Editor" && (
                 <>
+                  <SpellingDictionarySettings />
                   <Field label="Writing font">
                     <select
                       value={w.settings.fontFamily}
@@ -1958,7 +2040,7 @@ export default function WorkspaceViews({
                       </span>
                       <button
                         onClick={async () => {
-                          if (ctx.demo)
+                          if (ctx.demo && !p.cloud)
                             mutate((s) => {
                               s.publications.find(
                                 (x) => x.id === p.id,
@@ -1973,6 +2055,13 @@ export default function WorkspaceViews({
                                 publicationId: p.id,
                               }),
                             });
+                            if (r.ok)
+                              mutate((s) => {
+                                const local = s.publications.find(
+                                  (x) => x.id === p.id,
+                                );
+                                if (local) local.status = "unpublished";
+                              });
                             ctx.toast(
                               r.ok
                                 ? "Public access removed."
@@ -2008,35 +2097,55 @@ export default function WorkspaceViews({
                       onChange={(e) => update("bio", e.target.value)}
                     />
                   </Field>
-                  {ctx.demo ? (
+                  {localSocial ? (
                     <p className="demo-disclosure">
-                      You’re in the local demo. There is no simulated account or
-                      cloud sync.{" "}
-                      <a href="/auth">Sign in to a configured account</a>
+                      Your notes are on this device. Free AI works without
+                      sign-in. Connect an account for community features.{" "}
+                      <button
+                        onClick={() =>
+                          void connectAccount().catch((e) =>
+                            ctx.toast(e.message),
+                          )
+                        }
+                      >
+                        Connect account
+                      </button>
                     </p>
                   ) : (
                     <>
-                      <Field label="New password">
-                        <input
-                          type="password"
-                          value={password}
-                          minLength={8}
-                          autoComplete="new-password"
-                          onChange={(e) => setPassword(e.target.value)}
-                        />
-                      </Field>
-                      <button
-                        className="secondary"
-                        disabled={password.length < 8}
-                        onClick={async () => {
-                          const { error } =
-                            await browserClient().auth.updateUser({ password });
-                          ctx.toast(error?.message ?? "Password updated.");
-                          setPassword("");
-                        }}
-                      >
-                        Update password
-                      </button>
+                      {window.studyspaceDevice ? (
+                        <p>
+                          Manage your password and Google Sign-In in your
+                          browser. Your desktop session stays connected until
+                          you sign out.
+                        </p>
+                      ) : (
+                        <>
+                          <Field label="New password">
+                            <input
+                              type="password"
+                              value={password}
+                              minLength={8}
+                              autoComplete="new-password"
+                              onChange={(e) => setPassword(e.target.value)}
+                            />
+                          </Field>
+                          <button
+                            className="secondary"
+                            disabled={password.length < 8}
+                            onClick={async () => {
+                              const { error } =
+                                await browserClient().auth.updateUser({
+                                  password,
+                                });
+                              ctx.toast(error?.message ?? "Password updated.");
+                              setPassword("");
+                            }}
+                          >
+                            Update password
+                          </button>
+                        </>
+                      )}
                       <button
                         className="secondary"
                         onClick={async () => {
@@ -2097,7 +2206,7 @@ export default function WorkspaceViews({
                       <Upload size={15} /> Import notes
                     </button>
                   </div>
-                  <JobStatus demo={ctx.demo} />
+                  <JobStatus demo={ctx.demo && !ctx.cloudAccount} />
                   <h3>Trash</h3>
                   <p className="field-hint">
                     Trashed content stays recoverable until you purge it. The
