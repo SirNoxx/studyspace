@@ -122,8 +122,9 @@ function fixture() {
         });
       });
       await page.goto("/demo?sample=1");
+      await page.getByRole("button", { name: "Library", exact: true }).click();
       await page
-        .getByRole("button", { name: "Shared collections", exact: true })
+        .getByRole("button", { name: "Shared with me", exact: true })
         .click();
       await page
         .locator("#shared-explorer-slot")

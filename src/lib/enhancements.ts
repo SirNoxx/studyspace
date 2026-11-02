@@ -92,10 +92,13 @@ export function cardMatchesGroup(
     !w.containers.some((c) => c.id === group.containerId && !c.trashed)
   )
     return false;
+  return cardSourceInCollection(w, card, group.containerId);
+}
+function cardSourceInCollection(w: Workspace, card: ReviewItem, containerId: string) {
   const within = (id?: string) =>
     !!id &&
     ancestry(w, id).every((c) => !c.trashed) &&
-    inContainer(w, id, group.containerId!);
+    inContainer(w, id, containerId);
   if (card.sourceType === "note") {
     const note = w.notes.find((n) => n.id === card.sourceId);
     return !!note && !note.trashed && within(note.containerId);
@@ -112,6 +115,15 @@ export function cardMatchesGroup(
     return !!note && within(note.containerId);
   }
   return within(card.subjectId);
+}
+export function cardsInCollection(w: Workspace, containerId: string) {
+  return w.review.filter((card) => {
+    const group = w.settings.cardGroups?.find((g) => g.id === card.groupId);
+    return cardSourceInCollection(w, card, containerId) ||
+      (!!group?.containerId &&
+        ancestry(w, group.containerId).every((c) => !c.trashed) &&
+        inContainer(w, group.containerId, containerId));
+  });
 }
 export function cardsInGroup(w: Workspace, groupId: string) {
   const groups = w.settings.cardGroups ?? [];

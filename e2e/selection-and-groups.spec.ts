@@ -54,7 +54,7 @@ test("selection actions follow the highlighted passage and linked study groups i
     .getByRole("button", { name: "Add to review", exact: true })
     .click();
   await page
-    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("navigation", { name: "Collections sections" })
     .getByRole("button", { name: "Review", exact: true })
     .click();
   await page

@@ -4,7 +4,15 @@ These changes are available in the source/dev app. The previously built 1.0.2 de
 
 ## Files and navigation
 
+The main sidebar has five destinations: **Collections**, **Quick notes**, **Journal**, **Weekly checkups**, and **Library**. Library groups **Discover**, **Shared with me**, **Bookmarks**, and **Card Review** in a section bar. Existing Discover, Shared collections, Bookmarks, and Review URLs still open the corresponding Library section.
+
+**Card Review** is a Library tab, with a shortcut at the top of Collections. It opens with the current collection selected, or all collections when none is focused; the Review collection selector can change that scope. Study groups and review history remain available. **Search** sits above the main tabs and searches across the workspace, including when opened with **Ctrl/Cmd + Shift + F** (or the configured shortcut). The collection-specific search action remains scoped.
+
 Opening a note replaces the active header tab. To keep the current tab and add another, right-click a note and choose **Open in new tab**, the first menu option. Opening an already open note activates its existing tab. Replacing a tab preserves saved edits and note navigation history.
+
+### Scratchpads in Quick notes
+
+Choose **New scratchpad** in Quick notes to open a blank sketch with the pen ready. The sidebar's sketch button starts another scratchpad while you work. Drawings use the existing whiteboard tools, including colors, shapes, text, eraser, undo/redo, enlargement, and PNG export. Each scratchpad saves as an editable quick note, with a sketch icon in the list; rename it, reopen it, or move it to a collection like any other quick note. No separate main tab is added.
 
 ### Settings and note typography
 

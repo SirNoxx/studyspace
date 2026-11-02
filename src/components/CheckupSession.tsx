@@ -57,7 +57,11 @@ export default function CheckupSession({
   editEntry: (id: string, change: (entry: CheckupEntry) => void) => void;
   onExit: () => void;
 }) {
-  const sections = entry.template.sections;
+  const sections = entry.template.sections.map((section) =>
+    section.id === "money" && section.title === "A moment for your money"
+      ? { ...section, title: "Finances" }
+      : section,
+  );
   const [step, setStep] = useState(() =>
     Math.min(entry.sessionStep ?? 0, sections.length + 1),
   );
@@ -78,7 +82,7 @@ export default function CheckupSession({
   const edit = (fn: (e: CheckupEntry) => void) => editEntry(entry.id, fn);
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
-    session.current?.scrollIntoView({ block: "start", behavior: "instant" });
+    session.current?.querySelector(".meeting-screen")?.scrollTo({ top: 0, behavior: "instant" });
   }, [step, finished]);
   const go = (index: number, validate = false) => {
     if (validate && segment && !readOnly) {

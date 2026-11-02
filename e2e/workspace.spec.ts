@@ -75,7 +75,8 @@ test("capture, autosave, collection focus, dictionary, review, and publication",
     .getByRole("button", { name: "Need to review", exact: true })
     .click();
   await page.getByRole("button", { name: "Add to review" }).click();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Collections", exact: true }).click();
+  await page.getByRole("navigation", { name: "Collections sections" }).getByRole("button", { name: "Review", exact: true }).click();
   await page.getByRole("button", { name: "Reveal answer" }).click();
   await page.getByRole("button", { name: /Good/ }).click();
   await expect(

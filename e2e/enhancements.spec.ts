@@ -135,7 +135,7 @@ test("selection creates a grouped card and a stable link without losing Markdown
     .getByRole("button", { name: "Add to review", exact: true })
     .click();
   await page
-    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("navigation", { name: "Collections sections" })
     .getByRole("button", { name: "Review", exact: true })
     .click();
   await page
@@ -303,7 +303,8 @@ test("Discover publication requires metadata and scope preview while leaving ori
   page,
 }) => {
   await page.goto("/demo?sample=1");
-  await page.getByRole("button", { name: "Discover", exact: true }).click();
+  await page.getByRole("button", { name: "Library", exact: true }).click();
+  await page.getByRole("button", { name: "Published study materials", exact: true }).click();
   await page
     .getByRole("button", { name: "Publish a collection or folder" })
     .click();

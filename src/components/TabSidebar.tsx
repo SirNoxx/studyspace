@@ -9,12 +9,14 @@ import {
   BookA,
   Link2,
   Pin,
+  PenLine,
 } from "lucide-react";
 import type { AppContext } from "./WorkspaceApp";
 import { noteDisplayTitle } from "@/lib/journal-date";
 import { cardsInGroup } from "@/lib/enhancements";
 import { ancestry } from "@/lib/model";
 import { weekLabel } from "@/lib/weekly-checkups";
+import { isScratchpad } from "@/lib/scratchpad";
 export type SidebarRequest = {
   kind: "journal" | "review" | "checkup";
   id: string;
@@ -59,7 +61,7 @@ export default function TabSidebar({
           journal ? ctx.openJournalNote(note.id) : ctx.openNote(note.id)
         }
       >
-        <FileText size={15} />
+        {isScratchpad(note) ? <PenLine size={15} /> : <FileText size={15} />}
         <span>
           {noteDisplayTitle(note)}
           {journal && note.journalDate && (
@@ -302,6 +304,14 @@ export default function TabSidebar({
           <span>QUICK NOTES</span>
           <button
             className="icon-button"
+            aria-label="New scratchpad"
+            title="New scratchpad"
+            onClick={ctx.addScratchpad}
+          >
+            <PenLine size={16} />
+          </button>
+          <button
+            className="icon-button"
             aria-label="New quick note"
             onClick={() => ctx.setDialog({ type: "quick" })}
           >
@@ -316,7 +326,7 @@ export default function TabSidebar({
           {notes(quick)}
           {!quick.length && (
             <p className="tree-hint">
-              Capture a thought with Quick note above.
+              Capture a thought or start a scratchpad above.
             </p>
           )}
         </nav>

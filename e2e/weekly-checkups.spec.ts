@@ -1,6 +1,53 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+test("navigation stays in place across segments and scrolling", async ({ page }) => {
+  await page.goto("/demo/weekly-checkups");
+  await page.getByRole("button", { name: "Begin", exact: true }).click();
+  const picker = page.getByLabel("Go to segment");
+  const footer = page.locator(".meeting-footer");
+  const positions = async () => Promise.all([
+    footer.locator(".meeting-back").boundingBox(),
+    footer.locator(".primary").boundingBox(),
+  ]);
+  for (const size of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(size);
+    if (size.width < 800) {
+      const collapse = page.getByRole("button", { name: "Collapse explorer", exact: true });
+      if (await collapse.isVisible()) await collapse.click();
+    }
+    await picker.selectOption({ index: 0 });
+    const baseline = await positions();
+    const checkPosition = async () => {
+      await expect(page.locator(".mobile-create")).toBeHidden();
+      await expect(footer.locator(".primary")).toBeInViewport();
+      const current = await positions();
+      for (let i = 0; i < current.length; i++) {
+        for (const key of ["x", "y", "width", "height"] as const)
+          expect(Math.abs(current[i]![key] - baseline[i]![key])).toBeLessThanOrEqual(1);
+      }
+    };
+    const count = await picker.locator("option").count();
+    for (let index = 0; index < count; index++) {
+      await checkPosition();
+      await page.locator(".meeting-screen").evaluate((el) => { el.scrollTop = el.scrollHeight; });
+      await checkPosition();
+      const intention = page.getByLabel("This week's intention");
+      if (await intention.count()) await intention.fill("Keep a steady pace");
+      if (index < count - 1) {
+        await footer.getByRole("button", { name: "Next", exact: true }).click();
+        await expect(picker).toHaveValue(String(index + 1));
+      }
+    }
+    for (let index = count - 1; index > 0; index--) {
+      await footer.getByRole("button", { name: "Back", exact: true }).click();
+      await expect(picker).toHaveValue(String(index - 1));
+      await checkPosition();
+    }
+    await page.screenshot({ path: `test-results/checkup-navigation-${size.width}.png`, animations: "disabled", timeout: 30000 });
+  }
+});
+
 async function segment(page: Page, title: string) {
   const picker = page.getByRole("combobox", { name: "Go to segment" });
   const options = await picker.locator("option").allTextContents();
@@ -144,7 +191,7 @@ test("a focused journey plans tasks, meals, finances and goals, then compares sa
     .click();
   await page.getByLabel("Next week", { exact: true }).click();
   await page.getByRole("button", { name: "Begin", exact: true }).click();
-  await segment(page, "A moment for your money");
+  await segment(page, "Finances");
   await page.getByLabel("Savings balance", { exact: true }).fill("150");
   await segment(page, "Choose your direction");
   await page.getByLabel("This week's intention").fill("Keep it going");

@@ -1,5 +1,6 @@
 "use client";
 import { formatJournalDate, noteDisplayTitle } from "@/lib/journal-date";
+import { isScratchpad } from "@/lib/scratchpad";
 import { instantiateSnapshot } from "@/lib/study-copy";
 import { localDB } from "@/lib/store";
 import { sha256 } from "@/lib/transfer";
@@ -22,6 +23,7 @@ import {
   Settings,
   Sun,
   Feather,
+  PenLine,
   Trash2,
   RotateCcw,
   Download,
@@ -92,6 +94,7 @@ import {
   categories,
   publicationCounts,
   cardsInGroup,
+  cardsInCollection,
 } from "@/lib/enhancements";
 export default function WorkspaceViews({
   ctx,
@@ -118,6 +121,7 @@ export default function WorkspaceViews({
     [lastGrade, setLastGrade] = useState<string | null>(null),
     [reviewMode, setReviewMode] = useState("daily"),
     [cardGroup, setCardGroup] = useState("all"),
+    [reviewCollection, setReviewCollection] = useState(ctx.focus ?? "all"),
     [discoverCategory, setDiscoverCategory] = useState("all"),
     [discoverSort, setDiscoverSort] = useState("newest"),
     [discoverMode, setDiscoverMode] = useState("community"),
@@ -133,6 +137,13 @@ export default function WorkspaceViews({
     [searchHits, setSearchHits] = useState<typeof w.notes | null>(null),
     [searchStatus, setSearchStatus] = useState("");
   useEffect(() => {
+    if (view === "review") {
+      setReviewCollection(ctx.focus ?? "all");
+      setCardGroup("all");
+      setRevealed(false);
+    }
+  }, [view, ctx.focus]);
+  useEffect(() => {
     if (
       sidebarRequest?.kind === "journal" &&
       (view === "journal" || view === "dreams")
@@ -147,6 +158,7 @@ export default function WorkspaceViews({
       }
     } else if (sidebarRequest?.kind === "review" && view === "review") {
       setCardGroup(sidebarRequest.id);
+      setReviewCollection("all");
       setRevealed(false);
     }
   }, [sidebarRequest, view]);
@@ -383,14 +395,19 @@ export default function WorkspaceViews({
           {header(
             "CATCH A THOUGHT",
             "Quick notes",
-            "A separate space for fleeting thoughts. Move a note into a collection when you are ready to organize it.",
-            <button
-              className="primary"
-              onClick={() => setDialog({ type: "quick" })}
-            >
-              <Plus size={16} />
-              New quick note
-            </button>,
+            "Capture a thought or sketch an idea. Keep it here, or move it into a collection when you are ready.",
+            <div className="quick-capture-actions">
+              <button
+                className="primary"
+                onClick={() => setDialog({ type: "quick" })}
+              >
+                <Plus size={16} />
+                New quick note
+              </button>
+              <button className="secondary" onClick={ctx.addScratchpad}>
+                <PenLine size={16} /> New scratchpad
+              </button>
+            </div>,
           )}
           <input
             aria-label="Search quick notes"
@@ -405,9 +422,14 @@ export default function WorkspaceViews({
                   className="quick-note-open"
                   onClick={() => openNote(n.id)}
                 >
-                  <strong>{n.title || "Quick note"}</strong>
+                  <strong>
+                    {isScratchpad(n) && <PenLine size={15} aria-label="Scratchpad" />}
+                    {n.title || "Quick note"}
+                  </strong>
                   <span>
-                    {n.body.replace(/[#*`]/g, "").slice(0, 160) || "Empty note"}
+                    {isScratchpad(n)
+                      ? "Scratchpad · Open to keep sketching"
+                      : n.body.replace(/[#*`]/g, "").slice(0, 160) || "Empty note"}
                   </span>
                   <small>{new Date(n.updatedAt).toLocaleDateString()}</small>
                 </button>
@@ -872,7 +894,8 @@ export default function WorkspaceViews({
     );
     const newUsed = eventsToday.filter((e) => e.before.state === "new").length;
     const reviewUsed = eventsToday.length - newUsed;
-    const selectedCards = cardsInGroup(w, cardGroup);
+    const collectionCards = reviewCollection === "all" ? null : new Set(cardsInCollection(w, reviewCollection).map((r) => r.id));
+    const selectedCards = cardsInGroup(w, cardGroup).filter((r) => !collectionCards || collectionCards.has(r.id));
     const due = selectedCards
       .filter(
         (r) =>
@@ -917,6 +940,19 @@ export default function WorkspaceViews({
               <Plus size={16} /> Create card
             </button>,
           )}
+          <label className="review-collection-filter">
+            <span>Review collection</span>
+            <select aria-label="Review collection" value={reviewCollection} onChange={(e) => {
+              setReviewCollection(e.target.value);
+              setCardGroup("all");
+              setRevealed(false);
+            }}>
+              <option value="all">All collections</option>
+              {w.containers.filter((c) => !c.trashed && !c.system && c.kind !== "folder" && ancestry(w, c.id).every((a) => !a.trashed)).map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
+            </select>
+          </label>
           <StudyGroups
             ctx={ctx}
             value={cardGroup}
@@ -1194,7 +1230,7 @@ export default function WorkspaceViews({
         <div className="workspace-view">
           {header(
             "A PLACE TO COME BACK TO",
-            "Your library",
+            "Bookmarks",
             "Saved originals and bookmarked notes. Study copies are independently editable.",
           )}
           <h3>Bookmarked notes</h3>

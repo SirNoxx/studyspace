@@ -88,7 +88,8 @@ test("sidebars follow Journal, Review and Quick notes while common actions remai
   await expect(
     page.getByLabel("Journal entry title", { exact: true }),
   ).toHaveValue("January reflection");
-  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("navigation", { name: "Main navigation", exact: true }).getByRole("button", { name: "Collections", exact: true }).click();
+  await page.getByRole("navigation", { name: "Collections sections" }).getByRole("button", { name: "Review", exact: true }).click();
   const review = page.getByRole("navigation", {
     name: "Review study groups",
     exact: true,

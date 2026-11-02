@@ -333,7 +333,7 @@ const care = section(
 );
 const money = section(
   "money",
-  "A moment for your money",
+  "Finances",
   "Take a snapshot, then decide on one useful next step. Use the currency selected for this checkup.",
   [
     field(

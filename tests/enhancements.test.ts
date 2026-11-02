@@ -10,6 +10,7 @@ import {
 import {
   createCardGroup,
   cardsInGroup,
+  cardsInCollection,
   removeCardGroup,
   calendarDays,
   shiftPeriod,
@@ -26,6 +27,21 @@ import {
 } from "../src/lib/transfer";
 import { instantiateSnapshot } from "../src/lib/study-copy";
 import { unzipSync, strFromU8 } from "fflate";
+it("collection review follows nested sources and linked groups without including other collections", () => {
+  const w = emptyWorkspace();
+  const root = createContainer(w, { title: "Biology" });
+  const folder = createContainer(w, { title: "Cells", kind: "folder", parentId: root.id });
+  const other = createContainer(w, { title: "History" });
+  const note = createNote(w, folder.id);
+  const source = addReview(w, { front: "Cell?", back: "Life", sourceType: "note", sourceId: note.id });
+  const group = createCardGroup(w, "Practice", folder.id);
+  const grouped = addReview(w, { front: "Practice?", back: "Yes", sourceType: "custom", groupId: group.id });
+  const unrelated = addReview(w, { front: "Date?", back: "Today", sourceType: "custom", subjectId: other.id });
+  expect(cardsInCollection(w, root.id).map((r) => r.id)).toEqual([source.id, grouped.id]);
+  expect(cardsInCollection(w, other.id).map((r) => r.id)).toEqual([unrelated.id]);
+  folder.trashed = true;
+  expect(cardsInCollection(w, root.id)).toEqual([]);
+});
 it("upgrades old preferences without changing existing notes or theme", () => {
   const w = emptyWorkspace();
   createNote(w, undefined, { body: "ORIGINAL TEST CONTENT" });

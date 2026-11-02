@@ -1,4 +1,7 @@
 /* Additive controls share Studyspace's existing surfaces and typography. */
+.quick-capture-actions { display: flex; flex-wrap: wrap; gap: 8px; max-width: 100%; }
+.quick-note-open strong { display: flex; align-items: center; gap: 7px; }
+.quick-note-open strong svg { flex-shrink: 0; color: var(--accent); }
 .activity-ribbon {
   width: var(--ribbon-width, 86px);
   transition: width 0.2s ease;
@@ -25,6 +28,60 @@
   color: var(--ribbon-text);
   min-height: 28px;
   width: 34px;
+}
+.ribbon-search {
+  padding: 4px 0 9px;
+  border-bottom: 1px solid #ffffff25;
+}
+.ribbon-label {
+  white-space: normal;
+  text-align: center;
+}
+.workspace-section-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.workspace-section-nav strong,
+.workspace-section-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.workspace-section-nav > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.workspace-section-nav button {
+  padding: 9px 12px;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.workspace-section-nav button:hover,
+.workspace-section-nav button[aria-current="page"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.review-collection-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  font-size: 13px;
+}
+.review-collection-filter select { min-width: 0; max-width: 100%; }
+@media (max-width: 600px) {
+  .workspace-section-nav { padding: 12px; gap: 8px; }
+  .workspace-section-nav > strong { width: 100%; }
+  .workspace-section-nav button { padding: 8px; font-size: 12px; gap: 5px; }
 }
 .ribbon-labeled .ribbon-bottom {
   gap: 4px;

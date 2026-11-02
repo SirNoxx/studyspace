@@ -83,6 +83,8 @@ import { MessageBadge, ProfileAvatar } from "./social/Messages";
 import { ModulesButton } from "./ModuleGallery";
 import { moduleText } from "@/lib/modules";
 import { pinNote, unpinNote, isPinnedNote } from "@/lib/pinned-notes";
+import { cardsInCollection } from "@/lib/enhancements";
+import { createScratchpad, isScratchpad } from "@/lib/scratchpad";
 import { moveToQuickNotes } from "@/lib/quick-notes";
 import {
   type Workspace,
@@ -188,6 +190,7 @@ export interface AppContext {
   openNote: (id: string, newTab?: boolean) => void;
   openNoteAt: (id: string, from: number, to: number, expected: string) => void;
   addNote: (parentId?: string) => void;
+  addScratchpad: () => void;
   setDialog: (dialog: DialogState) => void;
   setView: (view: string) => void;
   openChat: (passage?: string, noteId?: string) => void;
@@ -212,13 +215,15 @@ export interface AppContext {
 const ribbon = [
   { id: "collections", label: "Collections", icon: Library },
   { id: "quick-notes", label: "Quick notes", icon: Feather },
-  { id: "search", label: "Search", icon: Search },
-  { id: "bookmarks", label: "Bookmarks", icon: Bookmark },
   { id: "journal", label: "Journal", icon: JournalIcon },
   { id: "weekly-checkups", label: "Weekly checkups", icon: CalendarCheck },
-  { id: "review", label: "Review", icon: Layers },
-  { id: "discover", label: "Discover", icon: Compass },
-  { id: "shared", label: "Shared collections", icon: Globe },
+  { id: "library", label: "Library", icon: BookOpen },
+];
+const libraryViews = [
+  { id: "library", label: "Discover", icon: Compass },
+  { id: "shared", label: "Shared with me", icon: Users },
+  { id: "bookmarks", label: "Bookmarks", icon: Bookmark },
+  { id: "review", label: "Card Review", icon: Layers },
 ];
 const inspectorTabs = [
   { id: "dictionary", label: "Dictionary", icon: BookA },
@@ -420,6 +425,7 @@ export default function WorkspaceApp({
     }
     setSettingsOpen(false);
     if (v === "planner" || v === "calendar") v = "collections";
+    if (v === "review") setSidebarRequest(undefined);
     setViewState(v);
     if (innerWidth < 800) setLeft(false);
     history.pushState(
@@ -441,6 +447,11 @@ export default function WorkspaceApp({
           )?.id ?? null)
       : null;
   const setFocusState = (id: string | null) => commitFocus(collectionFocus(id));
+  const openWorkspaceSearch = () => {
+    setFocusState(null);
+    setView("search");
+    history.replaceState({ ...history.state, studyspaceFocus: null }, "");
+  };
   const setFocus = (id: string | null) => {
     if (id && wRef.current) {
       const path = ancestry(wRef.current, id).map((c) => c.id);
@@ -533,7 +544,9 @@ export default function WorkspaceApp({
         renderTimer.current = null;
         setW(wRef.current);
       }
-      if (!wRef.current?.notes.some((n) => n.id === id && !n.trashed)) return;
+      const openingNote = wRef.current?.notes.find((n) => n.id === id && !n.trashed);
+      if (!openingNote) return;
+      if (isScratchpad(openingNote)) setMode("live");
       const pane = target === "right" && rightNoteId ? "right" : "left";
       setActivePane(pane);
       if (recordHistory)
@@ -994,7 +1007,7 @@ export default function WorkspaceApp({
       e.preventDefault();
       e.stopPropagation();
       if (binding === "zen") setZen((v) => !v);
-      else if (binding === "search") setViewState("search");
+      else if (binding === "search") openWorkspaceSearch();
       else setDialog({ type: binding === "quick" ? "quick" : binding });
     };
     const escapeListener = (e: KeyboardEvent) => {
@@ -1050,6 +1063,13 @@ export default function WorkspaceApp({
     !collaboration && view === "collections" && editingNote?.kind === "quick"
       ? "quick-notes"
       : view;
+  const inLibrary = !collaboration && ["library", "discover", "shared", "bookmarks", "learning", "review"].includes(view);
+  const hasInspector = !inLibrary && view !== "weekly-checkups" && !(view === "collections" && isScratchpad(editingNote));
+  const mainNavigationView = inLibrary
+    ? "library"
+    : ["review", "dictionary", "sources"].includes(navigationView)
+      ? "collections"
+      : navigationView === "dreams" ? "journal" : navigationView;
   const closeTab = (id: string) => {
     setClosedTabs((old) => [...old, id]);
     const next = tabs.filter((t) => t !== id);
@@ -1435,6 +1455,16 @@ export default function WorkspaceApp({
     },
     w,
     addNote,
+    addScratchpad: () => {
+      let id = "";
+      mutate((s) => {
+        id = createScratchpad(s).id;
+      });
+      if (id) {
+        setMode("live");
+        openNote(id, false, "left");
+      }
+    },
     mutate,
     demo,
     account,
@@ -2199,7 +2229,7 @@ export default function WorkspaceApp({
         (readOnly ? "workspace-readonly " : "") +
         (zen ? "zen " : "") +
         (left ? "left-open " : "") +
-        (right && view !== "weekly-checkups" ? "right-open " : "")
+        (right && hasInspector ? "right-open " : "")
       }
       style={
         {
@@ -2253,6 +2283,17 @@ export default function WorkspaceApp({
             <ChevronDown size={17} />
           )}
         </button>
+        <div className="ribbon-search">
+          <IconButton
+            label="Search"
+            title={`Search workspace (${(w.settings.shortcuts.search ?? "Mod+Shift+f").replace("Mod", "Ctrl / ⌘")})`}
+            active={view === "search"}
+            onClick={openWorkspaceSearch}
+          >
+            <Search size={20} />
+            {!w.settings.ribbonCompact && <span className="ribbon-label">Search</span>}
+          </IconButton>
+        </div>
         <div className="ribbon-main">
           {collaboration && (
             <IconButton
@@ -2271,7 +2312,7 @@ export default function WorkspaceApp({
             .filter(
               (item) =>
                 !collaboration ||
-                !["shared", "discover", "journal", "quick-notes", "weekly-checkups"].includes(
+                !["library", "journal", "quick-notes", "weekly-checkups"].includes(
                   item.id,
                 ),
             )
@@ -2279,7 +2320,8 @@ export default function WorkspaceApp({
               <IconButton
                 key={item.id}
                 label={item.label}
-                active={navigationView === item.id}
+                active={mainNavigationView === item.id}
+                aria-current={mainNavigationView === item.id ? "page" : undefined}
                 onClick={() => {
                   if (item.id === "collections") {
                     if (
@@ -2298,7 +2340,7 @@ export default function WorkspaceApp({
                 {!w.settings.ribbonCompact && (
                   <span className="ribbon-label">{item.label}</span>
                 )}
-                {item.id === "review" &&
+                {item.id === (collaboration ? "collections" : "library") &&
                   w.review.some(
                     (r) => !r.suspended && r.schedule.due <= now(),
                   ) && <span className="ribbon-dot" />}
@@ -2454,7 +2496,7 @@ export default function WorkspaceApp({
             ) : navigationView !== "collections" && !studyFolderPicker ? (
               <TabSidebar
                 ctx={ctx}
-                view={navigationView}
+                view={view === "library" ? "discover" : navigationView}
                 onCheckup={(id) => setSidebarRequest({ kind: "checkup", id, sequence: Date.now() })}
                 onReviewGroup={(id) =>
                   setSidebarRequest({
@@ -2696,23 +2738,6 @@ export default function WorkspaceApp({
                   <button onClick={() => setDialog({ type: "palette" })}>
                     <Command size={15} /> Command palette <kbd>Ctrl P</kbd>
                   </button>
-                  <button onClick={() => setView("review")}>
-                    <span className="review-mini-icon">
-                      <Layers size={15} />
-                    </span>
-                    <span>
-                      A little learning, every day
-                      <small>
-                        {
-                          w.review.filter(
-                            (r) => !r.suspended && r.schedule.due <= now(),
-                          ).length
-                        }{" "}
-                        items ready to review
-                      </small>
-                    </span>
-                    <ChevronRight size={14} />
-                  </button>
                 </div>
               </>
             )}
@@ -2856,7 +2881,7 @@ export default function WorkspaceApp({
               >
                 {zen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
               </IconButton>
-              <IconButton
+              {hasInspector && <IconButton
                 label={!zen && right ? "Close inspector" : "Open inspector"}
                 aria-expanded={!zen && right}
                 onClick={() => {
@@ -2871,7 +2896,7 @@ export default function WorkspaceApp({
                 ) : (
                   <PanelRightOpen size={17} />
                 )}
-              </IconButton>
+              </IconButton>}
             </div>
           </div>
           {(conflict || recovery) && (
@@ -2904,6 +2929,32 @@ export default function WorkspaceApp({
                 {recovery ? "Dismiss" : "Reload saved"}
               </button>
             </div>
+          )}
+          {inLibrary && !collaboration && (
+            <nav className="workspace-section-nav" aria-label="Library sections">
+              <strong><BookOpen size={17} /> Library</strong>
+              <div>
+                {libraryViews.map((item) => {
+                  const selected = item.id === view || (item.id === "library" && ["discover", "learning"].includes(view));
+                  return (
+                    <button key={item.id} aria-current={selected ? "page" : undefined} onClick={() => setView(item.id)}>
+                      <item.icon size={16} /> {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+          )}
+          {((collaboration && view === "review") || navigationView === "collections") && (
+            <nav className="workspace-section-nav" aria-label="Collections sections">
+              {view === "review" ? (
+                <button onClick={() => setView("collections")}><ArrowLeft size={16} /> Collections</button>
+              ) : <strong><Library size={17} /> {focused?.title ?? "Collections"}</strong>}
+              <button aria-label="Review" aria-current={view === "review" ? "page" : undefined} onClick={() => setView("review")}>
+                <Layers size={17} /> Review
+                <span className="badge">{(focused ? cardsInCollection(w, focused.id) : w.review).filter((r) => !r.suspended && r.schedule.due <= now()).length}</span>
+              </button>
+            </nav>
           )}
           {view === "collections" && active ? (
             <>
@@ -2982,7 +3033,7 @@ export default function WorkspaceApp({
                     <ArrowLeft size={12} />
                     Quick notes
                   </button>
-                  <span>This thought is unfiled.</span>
+                  <span>{isScratchpad(active) ? "Scratchpad · Saved in Quick notes." : "This thought is unfiled."}</span>
                   <button
                     onClick={() =>
                       setDialog({
@@ -3011,7 +3062,7 @@ export default function WorkspaceApp({
               <div className="document-scroll" ref={scroller}>
                 <article
                   className={
-                    "document " + (w.settings.fullWidth ? "full-width" : "")
+                    "document " + (w.settings.fullWidth || isScratchpad(active) ? "full-width" : "")
                   }
                 >
                   <div className="document-meta">
@@ -3425,7 +3476,7 @@ export default function WorkspaceApp({
             <WorkspaceViews
               key={cloudAccount?.id ?? "signed-out"}
               ctx={ctx}
-              view={view}
+              view={view === "library" ? "discover" : view}
               sidebarRequest={sidebarRequest}
               query={treeQuery}
               setQuery={setTreeQuery}
@@ -3493,7 +3544,7 @@ export default function WorkspaceApp({
           />
         )}
       </div>
-      {!zen && right && view !== "weekly-checkups" && (
+      {!zen && right && hasInspector && (
         <>
           <div
             className="resize-handle right-resize"
